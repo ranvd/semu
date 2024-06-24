@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-#include "riscv.h"
 #include "common.h"
 #include "device.h"
+#include "riscv.h"
 #include "riscv_private.h"
 
 /* Return the string representation of an error code identifier */
@@ -436,6 +436,23 @@ static inline void set_dest(hart_t *vm, uint32_t insn, uint32_t x)
 
 static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
 {
+    switch (addr) {
+    case RV_CSR_TIME:
+        *value = vm->time;
+        return;
+    case RV_CSR_TIMEH:
+        *value = vm->time >> 32;
+        return;
+    case RV_CSR_INSTRET:
+        *value = vm->instret;
+        return;
+    case RV_CSR_INSTRETH:
+        *value = vm->instret >> 32;
+        return;
+    default:
+        break;
+    }
+    
     if (!vm->s_mode) {
         vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
         return;
@@ -478,18 +495,6 @@ static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
         break;
     case RV_CSR_STVAL:
         *value = vm->stval;
-        break;
-    case RV_CSR_TIME:
-        *value = vm->time;
-        break;
-    case RV_CSR_TIMEH:
-        *value = vm->time >> 32;
-        break;
-    case RV_CSR_INSTRET:
-        *value = vm->instret;
-        break;
-    case RV_CSR_INSTRETH:
-        *value = vm->instret >> 32;
         break;
     default:
         vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
@@ -802,7 +807,7 @@ void vm_step(hart_t *vm)
     if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
         uint32_t applicable = (vm->sip & vm->sie);
         uint8_t idx = __builtin_ffs(applicable) - 1;
-        if (idx == 1){
+        if (idx == 1) {
             emu_state_t *data = PRIV(vm);
             data->clint.msip[vm->mhartid] = 0;
         }
