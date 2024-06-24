@@ -4,7 +4,7 @@
 
 /* Make PLIC as simple as possible: 32 interrupts, no priority */
 
-void plic_update_interrupts(vm_t *vm, plic_state_t *plic)
+void plic_update_interrupts(hart_t *vm, plic_state_t *plic)
 {
     /* Update pending interrupts */
     plic->ip |= plic->active & ~plic->masked;
@@ -71,7 +71,7 @@ static bool plic_reg_write(plic_state_t *plic, uint32_t addr, uint32_t value)
     }
 }
 
-void plic_read(vm_t *vm,
+void plic_read(hart_t *vm,
                plic_state_t *plic,
                uint32_t addr,
                uint8_t width,
@@ -94,7 +94,7 @@ void plic_read(vm_t *vm,
     }
 }
 
-void plic_write(vm_t *vm,
+void plic_write(hart_t *vm,
                 plic_state_t *plic,
                 uint32_t addr,
                 uint8_t width,

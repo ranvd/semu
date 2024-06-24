@@ -2,7 +2,7 @@
 #include "riscv.h"
 #include "riscv_private.h"
 
-void clint_update_interrupts(vm_t *vm, clint_state_t *clint)
+void clint_update_interrupts(hart_t *vm, clint_state_t *clint)
 {
     if (clint->mtime >= clint->mtimecmp[0])
         vm->sip |= RV_INT_STI_BIT;
@@ -55,7 +55,7 @@ static bool clint_reg_write(clint_state_t *clint, uint32_t addr, uint32_t value)
     return false;
 }
 
-void clint_read(vm_t *vm,
+void clint_read(hart_t *vm,
                clint_state_t *clint,
                uint32_t addr,
                uint8_t width,
@@ -67,7 +67,7 @@ void clint_read(vm_t *vm,
     return;
 }
 
-void clint_write(vm_t *vm,
+void clint_write(hart_t *vm,
                 clint_state_t *clint,
                 uint32_t addr,
                 uint8_t width,
