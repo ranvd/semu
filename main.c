@@ -24,7 +24,7 @@ static void mem_fetch(hart_t *hart, uint32_t n_pages, uint32_t **page_addr)
     emu_state_t *data = PRIV(hart);
     if (unlikely(n_pages >= RAM_SIZE / RV_PAGE_SIZE)) {
         /* TODO: check for other regions */
-        vm_set_exception(hart, RV_EXC_FETCH_FAULT, hart->exc_val);
+        hart_set_exception(hart, RV_EXC_FETCH_FAULT, hart->exc_val);
         return;
     }
     *page_addr = &data->ram[n_pages << (RV_PAGE_SHIFT - 2)];
@@ -132,7 +132,7 @@ static void mem_load(hart_t *hart,
             return;
         }
     }
-    vm_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
+    hart_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
 }
 
 static void mem_store(hart_t *hart,
@@ -177,7 +177,7 @@ static void mem_store(hart_t *hart,
             return;
         }
     }
-    vm_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
+    hart_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
 }
 
 /* SBI */
@@ -505,7 +505,7 @@ static void handle_options(int argc,
         hart->mem_page_table = mem_page_table;    \
         hart->s_mode = true;                      \
         hart->hsm_status = SBI_HSM_STATE_STOPPED; \
-        vm_init(hart);                            \
+        hart_init(hart);                            \
     })
 
 static int semu_start(int argc, char **argv)
@@ -611,7 +611,7 @@ static int semu_start(int argc, char **argv)
 
             emu_update_timer_interrupt(vm.hart[i]);
 
-            vm_step(vm.hart[i]);
+            hart_step(vm.hart[i]);
             if (likely(!vm.hart[i]->error))
                 continue;
 
@@ -626,7 +626,7 @@ static int semu_start(int argc, char **argv)
                 continue;
             }
 
-            vm_error_report(vm.hart[i]);
+            hart_error_report(vm.hart[i]);
             return 2;
         }
     }

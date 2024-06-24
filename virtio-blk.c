@@ -386,7 +386,7 @@ static bool virtio_blk_reg_write(virtio_blk_state_t *vblk,
 #undef _
 }
 
-void virtio_blk_read(hart_t *vm,
+void virtio_blk_read(hart_t *hart,
                      virtio_blk_state_t *vblk,
                      uint32_t addr,
                      uint8_t width,
@@ -395,21 +395,21 @@ void virtio_blk_read(hart_t *vm,
     switch (width) {
     case RV_MEM_LW:
         if (!virtio_blk_reg_read(vblk, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
+            hart_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
         break;
     case RV_MEM_LBU:
     case RV_MEM_LB:
     case RV_MEM_LHU:
     case RV_MEM_LH:
-        vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_LOAD_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
 
-void virtio_blk_write(hart_t *vm,
+void virtio_blk_write(hart_t *hart,
                       virtio_blk_state_t *vblk,
                       uint32_t addr,
                       uint8_t width,
@@ -418,14 +418,14 @@ void virtio_blk_write(hart_t *vm,
     switch (width) {
     case RV_MEM_SW:
         if (!virtio_blk_reg_write(vblk, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
+            hart_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
         break;
     case RV_MEM_SB:
     case RV_MEM_SH:
-        vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_STORE_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }

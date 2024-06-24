@@ -13,14 +13,14 @@
  *    advanced, environment calls can be handled by simply clearing the
  *    error after completing the operation.
  *  - Faults: when handling faults, it is important to set
- *    vm->pc = vm->current_pc so that the instruction can be retried.
+ *    hart->pc = hart->current_pc so that the instruction can be retried.
  *  - Traps: exceptions can be delegated to the emulated code in the form
  *    of S-mode traps by invoking "hart_trap()". This function takes care
  *    of clearing the error.
  *
  * ERR_USER is not set by any "vm_*()" function. It is reserved for user
  * callbacks to halt instruction execution and trigger the return of
- * "vm_step()". If the flag is not set during a fetch operation, the pc
+ * "hart_step()". If the flag is not set during a fetch operation, the pc
  * will be advanced accordingly.
  */
 typedef enum {
@@ -35,17 +35,17 @@ typedef struct {
 } mmu_cache_t;
 
 /* To use the emulator, start by initializing a hart_t object with zero values,
- * invoke vm_init(), and set the required environment-supplied callbacks. You
+ * invoke hart_init(), and set the required environment-supplied callbacks. You
  * may also set other necessary fields such as argument registers and s_mode,
  * ensuring that all field restrictions are met to avoid undefined behavior.
  *
  * Once the emulator is set up, execute the emulation loop by calling
- * "vm_step()" repeatedly. Each call attempts to execute a single instruction.
+ * "hart_step()" repeatedly. Each call attempts to execute a single instruction.
  *
- * If the execution completes successfully, the "vm->error" field will be set
+ * If the execution completes successfully, the "hart->error" field will be set
  * to ERR_NONE. However, if an error occurs during execution, the emulator will
- * halt and the "vm->error" field will provide information about the error. It
- * is important to handle the emulation error before calling "vm_step()" again;
+ * halt and the "hart->error" field will provide information about the error. It
+ * is important to handle the emulation error before calling "hart_step()" again;
  * otherwise, it will not execute any instructions. The possible errors are
  * described above for reference.
  */
@@ -74,7 +74,7 @@ struct __hart_internal {
     uint64_t time;
 
     /* Instruction execution state must be set to "NONE" for instruction
-     * execution to continue. If the state is not "NONE," the vm_step()
+     * execution to continue. If the state is not "NONE," the hart_step()
      * function will exit.
      */
     vm_error_t error;
@@ -111,18 +111,18 @@ struct __hart_internal {
 
     void *priv; /**< environment supplied */
 
-    /* Memory access sets the vm->error to indicate failure. On successful
+    /* Memory access sets the hart->error to indicate failure. On successful
      * access, it reads or writes the specified "value".
      */
-    void (*mem_fetch)(hart_t *vm, uint32_t n_pages, uint32_t **page_addr);
-    void (*mem_load)(hart_t *vm, uint32_t addr, uint8_t width, uint32_t *value);
-    void (*mem_store)(hart_t *vm, uint32_t addr, uint8_t width, uint32_t value);
+    void (*mem_fetch)(hart_t *hart, uint32_t n_pages, uint32_t **page_addr);
+    void (*mem_load)(hart_t *hart, uint32_t addr, uint8_t width, uint32_t *value);
+    void (*mem_store)(hart_t *hart, uint32_t addr, uint8_t width, uint32_t value);
 
     /* Pre-validate whether the required page number can accommodate a page
      * table. If it is not a valid page, it returns NULL. The function returns
      * a uint32_t * to the page if valid.
      */
-    uint32_t *(*mem_page_table)(const hart_t *vm, uint32_t ppn);
+    uint32_t *(*mem_page_table)(const hart_t *hart, uint32_t ppn);
 
     /* Point to the belonged vm_t */
     vm_t *vm;
@@ -137,23 +137,23 @@ struct __vm_internel {
     hart_t **hart;
 };
 
-void vm_init(hart_t *vm);
+void hart_init(hart_t *hart);
 
 /* Emulate the next instruction. This is a no-op if the error is already set. */
-void vm_step(hart_t *vm);
+void hart_step(hart_t *hart);
 
-/* Raise a RISC-V exception. This is equivalent to setting vm->error to
+/* Raise a RISC-V exception. This is equivalent to setting hart->error to
  * ERR_EXCEPTION and setting the accompanying fields. It is provided as
  * a function for convenience and to prevent mistakes such as forgetting to
  * set a field.
  */
-void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val);
+void hart_set_exception(hart_t *hart, uint32_t cause, uint32_t val);
 
 /* Delegate the currently set exception to S-mode as a trap. This function does
- * not check if vm->error is EXC_EXCEPTION; it assumes that "exc_cause" and
- * "exc_val" are correctly set. It sets vm->error to ERR_NONE.
+ * not check if hart->error is EXC_EXCEPTION; it assumes that "exc_cause" and
+ * "exc_val" are correctly set. It sets hart->error to ERR_NONE.
  */
-void hart_trap(hart_t *vm);
+void hart_trap(hart_t *hart);
 
 /* Return a readable description for a RISC-V exception cause */
-void vm_error_report(const hart_t *vm);
+void hart_error_report(const hart_t *hart);

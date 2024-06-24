@@ -5,7 +5,7 @@
 #define RAM_FUNC(width, code)                             \
     do {                                                  \
         if (unlikely((addr & (width - 1)))) {             \
-            vm_set_exception(vm, exc_cause, vm->exc_val); \
+            hart_set_exception(hart, exc_cause, hart->exc_val); \
             break;                                        \
         }                                                 \
         UNUSED uint8_t offset = (addr & 0b11) * 8;        \
@@ -13,7 +13,7 @@
         code;                                             \
     } while (0)
 
-void ram_read(hart_t *vm,
+void ram_read(hart_t *hart,
               uint32_t *mem,
               const uint32_t addr,
               const uint8_t width,
@@ -38,12 +38,12 @@ void ram_read(hart_t *vm,
         RAM_FUNC(1, *value = (uint32_t) (int32_t) (int8_t) ((*cell) >> offset));
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
 
-void ram_write(hart_t *vm,
+void ram_write(hart_t *hart,
                uint32_t *mem,
                const uint32_t addr,
                const uint8_t width,
@@ -63,7 +63,7 @@ void ram_write(hart_t *vm,
                                                                    << offset);
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }

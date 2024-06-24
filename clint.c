@@ -63,25 +63,25 @@ static bool clint_reg_write(clint_state_t *clint, uint32_t addr, uint32_t value)
     return false;
 }
 
-void clint_read(hart_t *vm,
+void clint_read(hart_t *hart,
                 clint_state_t *clint,
                 uint32_t addr,
                 uint8_t width,
                 uint32_t *value)
 {
     if (!clint_reg_read(clint, addr, value))
-        vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
     *value = (*value) >> (RV_MEM_SW - width);
     return;
 }
 
-void clint_write(hart_t *vm,
+void clint_write(hart_t *hart,
                  clint_state_t *clint,
                  uint32_t addr,
                  uint8_t width,
                  uint32_t value)
 {
     if (!clint_reg_write(clint, addr, value >> (RV_MEM_SW - width)))
-        vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
     return;
 }

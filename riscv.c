@@ -41,10 +41,10 @@ static const char *vm_exc_cause_str(uint32_t err)
     return "[Unknown]";
 }
 
-void vm_error_report(const hart_t *vm)
+void hart_error_report(const hart_t *hart)
 {
-    fprintf(stderr, "vm error %s: %s. val=%#x\n", vm_error_str(vm->error),
-            vm_exc_cause_str(vm->exc_cause), vm->exc_val);
+    fprintf(stderr, "hart error %s: %s. val=%#x\n", vm_error_str(hart->error),
+            vm_exc_cause_str(hart->exc_cause), hart->exc_val);
 }
 
 /* Instruction decoding */
@@ -157,40 +157,40 @@ static inline uint8_t decode_func5(uint32_t insn)
     return insn >> 27;
 }
 
-static inline uint32_t read_rs1(const hart_t *vm, uint32_t insn)
+static inline uint32_t read_rs1(const hart_t *hart, uint32_t insn)
 {
-    return vm->x_regs[decode_rs1(insn)];
+    return hart->x_regs[decode_rs1(insn)];
 }
 
-static inline uint32_t read_rs2(const hart_t *vm, uint32_t insn)
+static inline uint32_t read_rs2(const hart_t *hart, uint32_t insn)
 {
-    return vm->x_regs[decode_rs2(insn)];
+    return hart->x_regs[decode_rs2(insn)];
 }
 
 /* virtual addressing */
 
-static void mmu_invalidate(hart_t *vm)
+static void mmu_invalidate(hart_t *hart)
 {
-    vm->cache_fetch.n_pages = 0xFFFFFFFF;
+    hart->cache_fetch.n_pages = 0xFFFFFFFF;
 }
 
 /* Pre-verify the root page table to minimize page table access during
  * translation time.
  */
-static void mmu_set(hart_t *vm, uint32_t satp)
+static void mmu_set(hart_t *hart, uint32_t satp)
 {
-    mmu_invalidate(vm);
+    mmu_invalidate(hart);
     if (satp >> 31) {
-        uint32_t *page_table = vm->mem_page_table(vm, satp & MASK(22));
+        uint32_t *page_table = hart->mem_page_table(hart, satp & MASK(22));
         if (!page_table)
             return;
-        vm->page_table = page_table;
+        hart->page_table = page_table;
         satp &= ~(MASK(9) << 22);
     } else {
-        vm->page_table = NULL;
+        hart->page_table = NULL;
         satp = 0;
     }
-    vm->satp = satp;
+    hart->satp = satp;
 }
 
 #define PTE_ITER(page_table, vpn, additional_checks)    \
@@ -212,23 +212,23 @@ static void mmu_set(hart_t *vm, uint32_t satp)
         return true; /* not valid */                    \
     }
 
-/* Assume vm->page_table is set.
+/* Assume hart->page_table is set.
  *
  * If there is an error fetching a page table, return false.
  * Otherwise return true and:
  *   - in case of valid leaf: set *pte and *ppn
  *   - none found (page fault): set *pte to NULL
  */
-static bool mmu_lookup(const hart_t *vm,
+static bool mmu_lookup(const hart_t *hart,
                        uint32_t vpn,
                        uint32_t **pte,
                        uint32_t *ppn)
 {
-    PTE_ITER(vm->page_table, vpn >> 10,
+    PTE_ITER(hart->page_table, vpn >> 10,
              if (unlikely((*ppn) & MASK(10))) /* misaligned superpage */
                  *pte = NULL;
              else *ppn |= vpn & MASK(10);)
-    uint32_t *page_table = vm->mem_page_table(vm, (**pte) >> 10);
+    uint32_t *page_table = hart->mem_page_table(hart, (**pte) >> 10);
     if (!page_table)
         return false;
     PTE_ITER(page_table, vpn & MASK(10), )
@@ -236,7 +236,7 @@ static bool mmu_lookup(const hart_t *vm,
     return true;
 }
 
-static void mmu_translate(hart_t *vm,
+static void mmu_translate(hart_t *hart,
                           uint32_t *addr,
                           const uint32_t access_bits,
                           const uint32_t set_bits,
@@ -245,15 +245,15 @@ static void mmu_translate(hart_t *vm,
                           const uint8_t pfault)
 {
     /* NOTE: save virtual address, for physical accesses, to set exception. */
-    vm->exc_val = *addr;
-    if (!vm->page_table)
+    hart->exc_val = *addr;
+    if (!hart->page_table)
         return;
 
     uint32_t *pte_ref;
     uint32_t ppn;
-    bool ok = mmu_lookup(vm, (*addr) >> RV_PAGE_SHIFT, &pte_ref, &ppn);
+    bool ok = mmu_lookup(hart, (*addr) >> RV_PAGE_SHIFT, &pte_ref, &ppn);
     if (unlikely(!ok)) {
-        vm_set_exception(vm, fault, *addr);
+        hart_set_exception(hart, fault, *addr);
         return;
     }
 
@@ -261,10 +261,10 @@ static void mmu_translate(hart_t *vm,
     if (!(pte_ref /* PTE lookup was successful */ &&
           !(ppn >> 20) /* PPN is valid */ &&
           (pte = *pte_ref, pte & access_bits) /* access type is allowed */ &&
-          (!(pte & (1 << 4)) == vm->s_mode ||
+          (!(pte & (1 << 4)) == hart->s_mode ||
            skip_privilege_test) /* privilege matches */
           )) {
-        vm_set_exception(vm, pfault, *addr);
+        hart_set_exception(hart, pfault, *addr);
         return;
     }
 
@@ -275,85 +275,85 @@ static void mmu_translate(hart_t *vm,
     *addr = ((*addr) & MASK(RV_PAGE_SHIFT)) | (ppn << RV_PAGE_SHIFT);
 }
 
-static void mmu_fence(hart_t *vm, uint32_t insn UNUSED)
+static void mmu_fence(hart_t *hart, uint32_t insn UNUSED)
 {
-    mmu_invalidate(vm);
+    mmu_invalidate(hart);
 }
 
-static void mmu_fetch(hart_t *vm, uint32_t addr, uint32_t *value)
+static void mmu_fetch(hart_t *hart, uint32_t addr, uint32_t *value)
 {
     uint32_t vpn = addr >> RV_PAGE_SHIFT;
-    if (unlikely(vpn != vm->cache_fetch.n_pages)) {
-        mmu_translate(vm, &addr, (1 << 3), (1 << 6), false, RV_EXC_FETCH_FAULT,
+    if (unlikely(vpn != hart->cache_fetch.n_pages)) {
+        mmu_translate(hart, &addr, (1 << 3), (1 << 6), false, RV_EXC_FETCH_FAULT,
                       RV_EXC_FETCH_PFAULT);
-        if (vm->error)
+        if (hart->error)
             return;
         uint32_t *page_addr;
-        vm->mem_fetch(vm, addr >> RV_PAGE_SHIFT, &page_addr);
-        if (vm->error)
+        hart->mem_fetch(hart, addr >> RV_PAGE_SHIFT, &page_addr);
+        if (hart->error)
             return;
-        vm->cache_fetch.n_pages = vpn;
-        vm->cache_fetch.page_addr = page_addr;
+        hart->cache_fetch.n_pages = vpn;
+        hart->cache_fetch.page_addr = page_addr;
     }
-    *value = vm->cache_fetch.page_addr[(addr >> 2) & MASK(RV_PAGE_SHIFT - 2)];
+    *value = hart->cache_fetch.page_addr[(addr >> 2) & MASK(RV_PAGE_SHIFT - 2)];
 }
 
-static void mmu_load(hart_t *vm,
+static void mmu_load(hart_t *hart,
                      uint32_t addr,
                      uint8_t width,
                      uint32_t *value,
                      bool reserved)
 {
-    mmu_translate(vm, &addr, (1 << 1) | (vm->sstatus_mxr ? (1 << 3) : 0),
-                  (1 << 6), vm->sstatus_sum && vm->s_mode, RV_EXC_LOAD_FAULT,
+    mmu_translate(hart, &addr, (1 << 1) | (hart->sstatus_mxr ? (1 << 3) : 0),
+                  (1 << 6), hart->sstatus_sum && hart->s_mode, RV_EXC_LOAD_FAULT,
                   RV_EXC_LOAD_PFAULT);
-    if (vm->error)
+    if (hart->error)
         return;
-    vm->mem_load(vm, addr, width, value);
-    if (vm->error)
+    hart->mem_load(hart, addr, width, value);
+    if (hart->error)
         return;
 
     if (unlikely(reserved)) {
-        vm->lr_reservation = addr | 1;
-        vm->lr_val = *value;
+        hart->lr_reservation = addr | 1;
+        hart->lr_val = *value;
     }
 }
 
-static bool mmu_store(hart_t *vm,
+static bool mmu_store(hart_t *hart,
                       uint32_t addr,
                       uint8_t width,
                       uint32_t value,
                       bool cond)
 {
-    mmu_translate(vm, &addr, (1 << 2), (1 << 6) | (1 << 7),
-                  vm->sstatus_sum && vm->s_mode, RV_EXC_STORE_FAULT,
+    mmu_translate(hart, &addr, (1 << 2), (1 << 6) | (1 << 7),
+                  hart->sstatus_sum && hart->s_mode, RV_EXC_STORE_FAULT,
                   RV_EXC_STORE_PFAULT);
-    if (vm->error)
+    if (hart->error)
         return false;
 
     if (unlikely(cond)) {
         uint32_t cas_value;
-        vm->mem_load(vm, addr, width, &cas_value);
-        if ((vm->lr_reservation != (addr | 1)) || vm->lr_val != cas_value)
+        hart->mem_load(hart, addr, width, &cas_value);
+        if ((hart->lr_reservation != (addr | 1)) || hart->lr_val != cas_value)
             return false;
 
-        vm->lr_reservation = 0;
+        hart->lr_reservation = 0;
     } else {
-        if (unlikely(vm->lr_reservation & 1) &&
-            (vm->lr_reservation & ~3) == (addr & ~3))
-            vm->lr_reservation = 0;
+        if (unlikely(hart->lr_reservation & 1) &&
+            (hart->lr_reservation & ~3) == (addr & ~3))
+            hart->lr_reservation = 0;
     }
-    vm->mem_store(vm, addr, width, value);
+    hart->mem_store(hart, addr, width, value);
     return true;
 }
 
 /* exceptions, traps, interrupts */
 
-void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val)
+void hart_set_exception(hart_t *hart, uint32_t cause, uint32_t val)
 {
-    vm->error = ERR_EXCEPTION;
-    vm->exc_cause = cause;
-    vm->exc_val = val;
+    hart->error = ERR_EXCEPTION;
+    hart->exc_cause = cause;
+    hart->exc_val = val;
 }
 
 #include <fcntl.h>
@@ -362,77 +362,77 @@ void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val)
 #include <unistd.h>
 
 int counter = 0;
-void hart_trap(hart_t *vm)
+void hart_trap(hart_t *hart)
 {
     /* Fill exception fields */
-    vm->scause = vm->exc_cause;
-    vm->stval = vm->exc_val;
+    hart->scause = hart->exc_cause;
+    hart->stval = hart->exc_val;
 
     /* Save to stack */
-    vm->sstatus_spie = vm->sstatus_sie;
-    vm->sstatus_spp = vm->s_mode;
-    vm->sepc = vm->current_pc;
+    hart->sstatus_spie = hart->sstatus_sie;
+    hart->sstatus_spp = hart->s_mode;
+    hart->sepc = hart->current_pc;
 
     /* Set */
-    vm->sstatus_sie = false;
-    mmu_invalidate(vm);
-    vm->s_mode = true;
-    vm->pc = vm->stvec_addr;
-    if (vm->stvec_vectored)
-        vm->pc += (vm->scause & MASK(31)) * 4;
+    hart->sstatus_sie = false;
+    mmu_invalidate(hart);
+    hart->s_mode = true;
+    hart->pc = hart->stvec_addr;
+    if (hart->stvec_vectored)
+        hart->pc += (hart->scause & MASK(31)) * 4;
 
-    vm->error = ERR_NONE;
+    hart->error = ERR_NONE;
 }
 
-static void op_sret(hart_t *vm)
+static void op_sret(hart_t *hart)
 {
     /* Restore from stack */
-    vm->pc = vm->sepc;
-    mmu_invalidate(vm);
-    vm->s_mode = vm->sstatus_spp;
-    vm->sstatus_sie = vm->sstatus_spie;
+    hart->pc = hart->sepc;
+    mmu_invalidate(hart);
+    hart->s_mode = hart->sstatus_spp;
+    hart->sstatus_sie = hart->sstatus_spie;
 
     /* Reset stack */
-    vm->sstatus_spp = false;
-    vm->sstatus_spie = true;
+    hart->sstatus_spp = false;
+    hart->sstatus_spie = true;
 }
 
-static void op_privileged(hart_t *vm, uint32_t insn)
+static void op_privileged(hart_t *hart, uint32_t insn)
 {
     if ((insn >> 25) == 0b0001001 /* PRIV: SFENCE_VMA */) {
-        mmu_fence(vm, insn);
+        mmu_fence(hart, insn);
         return;
     }
     if (insn & ((MASK(5) << 7) | (MASK(5) << 15))) {
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
     switch (decode_i_unsigned(insn)) {
     case 0b000000000001: /* PRIV_EBREAK */
-        vm_set_exception(vm, RV_EXC_BREAKPOINT, vm->current_pc);
+        hart_set_exception(hart, RV_EXC_BREAKPOINT, hart->current_pc);
         break;
     case 0b000000000000: /* PRIV_ECALL */
-        vm_set_exception(vm, vm->s_mode ? RV_EXC_ECALL_S : RV_EXC_ECALL_U, 0);
+        hart_set_exception(hart, hart->s_mode ? RV_EXC_ECALL_S : RV_EXC_ECALL_U, 0);
         break;
     case 0b000100000010: /* PRIV_SRET */
-        op_sret(vm);
+        op_sret(hart);
         break;
     case 0b000100000101: /* PRIV_WFI */
                          /* TODO: Implement this */
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         break;
     }
 }
 
 /* CSR instructions */
 
-static inline void set_dest(hart_t *vm, uint32_t insn, uint32_t x)
+static inline void set_dest(hart_t *hart, uint32_t insn, uint32_t x)
 {
     uint8_t rd = decode_rd(insn);
     if (rd)
-        vm->x_regs[rd] = x;
+        hart->x_regs[rd] = x;
 }
 
 /* clang-format off */
@@ -440,182 +440,182 @@ static inline void set_dest(hart_t *vm, uint32_t insn, uint32_t x)
 #define SIP_MASK (0              | 0              | RV_INT_SSI_BIT)
 /* clang-format on */
 
-static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
+static void csr_read(hart_t *hart, uint16_t addr, uint32_t *value)
 {
     switch (addr) {
     case RV_CSR_TIME:
-        *value = vm->time;
+        *value = hart->time;
         return;
     case RV_CSR_TIMEH:
-        *value = vm->time >> 32;
+        *value = hart->time >> 32;
         return;
     case RV_CSR_INSTRET:
-        *value = vm->instret;
+        *value = hart->instret;
         return;
     case RV_CSR_INSTRETH:
-        *value = vm->instret >> 32;
+        *value = hart->instret >> 32;
         return;
     default:
         break;
     }
 
-    if (!vm->s_mode) {
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+    if (!hart->s_mode) {
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 
     switch (addr) {
     case RV_CSR_SSTATUS:
         *value = 0;
-        vm->sstatus_sie && (*value |= 1 << (1));
-        vm->sstatus_spie && (*value |= 1 << (5));
-        vm->sstatus_spp && (*value |= 1 << (8));
-        vm->sstatus_sum && (*value |= 1 << (18));
-        vm->sstatus_mxr && (*value |= 1 << (19));
+        hart->sstatus_sie && (*value |= 1 << (1));
+        hart->sstatus_spie && (*value |= 1 << (5));
+        hart->sstatus_spp && (*value |= 1 << (8));
+        hart->sstatus_sum && (*value |= 1 << (18));
+        hart->sstatus_mxr && (*value |= 1 << (19));
         break;
     case RV_CSR_SIE:
-        *value = vm->sie;
+        *value = hart->sie;
         break;
     case RV_CSR_SIP:
-        *value = vm->sip;
+        *value = hart->sip;
         break;
     case RV_CSR_STVEC:
         *value = 0;
-        *value = vm->stvec_addr;
-        vm->stvec_vectored && (*value |= 1 << (0));
+        *value = hart->stvec_addr;
+        hart->stvec_vectored && (*value |= 1 << (0));
         break;
     case RV_CSR_SATP:
-        *value = vm->satp;
+        *value = hart->satp;
         break;
     case RV_CSR_SCOUNTEREN:
-        *value = vm->scounteren;
+        *value = hart->scounteren;
         break;
     case RV_CSR_SSCRATCH:
-        *value = vm->sscratch;
+        *value = hart->sscratch;
         break;
     case RV_CSR_SEPC:
-        *value = vm->sepc;
+        *value = hart->sepc;
         break;
     case RV_CSR_SCAUSE:
-        *value = vm->scause;
+        *value = hart->scause;
         break;
     case RV_CSR_STVAL:
-        *value = vm->stval;
+        *value = hart->stval;
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
     }
 }
 
-static void csr_write(hart_t *vm, uint16_t addr, uint32_t value)
+static void csr_write(hart_t *hart, uint16_t addr, uint32_t value)
 {
-    if (!vm->s_mode) {
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+    if (!hart->s_mode) {
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 
     switch (addr) {
     case RV_CSR_SSTATUS:
-        vm->sstatus_sie = (value & (1 << (1))) != 0;
-        vm->sstatus_spie = (value & (1 << (5))) != 0;
-        vm->sstatus_spp = (value & (1 << (8))) != 0;
-        vm->sstatus_sum = (value & (1 << (18))) != 0;
-        vm->sstatus_mxr = (value & (1 << (19))) != 0;
+        hart->sstatus_sie = (value & (1 << (1))) != 0;
+        hart->sstatus_spie = (value & (1 << (5))) != 0;
+        hart->sstatus_spp = (value & (1 << (8))) != 0;
+        hart->sstatus_sum = (value & (1 << (18))) != 0;
+        hart->sstatus_mxr = (value & (1 << (19))) != 0;
         break;
     case RV_CSR_SIE:
         value &= SIE_MASK;
-        vm->sie = value;
+        hart->sie = value;
         break;
     case RV_CSR_SIP:
         value &= SIP_MASK;
-        value |= vm->sip & ~SIP_MASK;
-        vm->sip = value;
+        value |= hart->sip & ~SIP_MASK;
+        hart->sip = value;
         break;
     case RV_CSR_STVEC:
-        vm->stvec_addr = value;
-        vm->stvec_addr &= ~0b11;
-        vm->stvec_vectored = (value & (1 << (0))) != 0;
+        hart->stvec_addr = value;
+        hart->stvec_addr &= ~0b11;
+        hart->stvec_vectored = (value & (1 << (0))) != 0;
         break;
     case RV_CSR_SATP:
-        mmu_set(vm, value);
+        mmu_set(hart, value);
         break;
     case RV_CSR_SCOUNTEREN:
-        vm->scounteren = value;
+        hart->scounteren = value;
         break;
     case RV_CSR_SSCRATCH:
-        vm->sscratch = value;
+        hart->sscratch = value;
         break;
     case RV_CSR_SEPC:
-        vm->sepc = value;
+        hart->sepc = value;
         break;
     case RV_CSR_SCAUSE:
-        vm->scause = value;
+        hart->scause = value;
         break;
     case RV_CSR_STVAL:
-        vm->stval = value;
+        hart->stval = value;
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
     }
 }
 
-static void op_csr_rw(hart_t *vm, uint32_t insn, uint16_t csr, uint32_t wvalue)
+static void op_csr_rw(hart_t *hart, uint32_t insn, uint16_t csr, uint32_t wvalue)
 {
     if (decode_rd(insn)) {
         uint32_t value;
-        csr_read(vm, csr, &value);
-        if (unlikely(vm->error))
+        csr_read(hart, csr, &value);
+        if (unlikely(hart->error))
             return;
-        set_dest(vm, insn, value);
+        set_dest(hart, insn, value);
     }
-    csr_write(vm, csr, wvalue);
+    csr_write(hart, csr, wvalue);
 }
 
-static void op_csr_cs(hart_t *vm,
+static void op_csr_cs(hart_t *hart,
                       uint32_t insn,
                       uint16_t csr,
                       uint32_t setmask,
                       uint32_t clearmask)
 {
     uint32_t value;
-    csr_read(vm, csr, &value);
-    if (unlikely(vm->error))
+    csr_read(hart, csr, &value);
+    if (unlikely(hart->error))
         return;
-    set_dest(vm, insn, value);
+    set_dest(hart, insn, value);
     if (decode_rs1(insn))
-        csr_write(vm, csr, (value & ~clearmask) | setmask);
+        csr_write(hart, csr, (value & ~clearmask) | setmask);
 }
 
-static void op_system(hart_t *vm, uint32_t insn)
+static void op_system(hart_t *hart, uint32_t insn)
 {
     switch (decode_func3(insn)) {
     /* CSR */
     case 0b001: /* CSRRW */
-        op_csr_rw(vm, insn, decode_i_unsigned(insn), read_rs1(vm, insn));
+        op_csr_rw(hart, insn, decode_i_unsigned(insn), read_rs1(hart, insn));
         break;
     case 0b101: /* CSRRWI */
-        op_csr_rw(vm, insn, decode_i_unsigned(insn), decode_rs1(insn));
+        op_csr_rw(hart, insn, decode_i_unsigned(insn), decode_rs1(insn));
         break;
     case 0b010: /* CSRRS */
-        op_csr_cs(vm, insn, decode_i_unsigned(insn), read_rs1(vm, insn), 0);
+        op_csr_cs(hart, insn, decode_i_unsigned(insn), read_rs1(hart, insn), 0);
         break;
     case 0b110: /* CSRRSI */
-        op_csr_cs(vm, insn, decode_i_unsigned(insn), decode_rs1(insn), 0);
+        op_csr_cs(hart, insn, decode_i_unsigned(insn), decode_rs1(insn), 0);
         break;
     case 0b011: /* CSRRC */
-        op_csr_cs(vm, insn, decode_i_unsigned(insn), 0, read_rs1(vm, insn));
+        op_csr_cs(hart, insn, decode_i_unsigned(insn), 0, read_rs1(hart, insn));
         break;
     case 0b111: /* CSRRCI */
-        op_csr_cs(vm, insn, decode_i_unsigned(insn), 0, decode_rs1(insn));
+        op_csr_cs(hart, insn, decode_i_unsigned(insn), 0, decode_rs1(insn));
         break;
 
     /* privileged instruction */
     case 0b000: /* SYS_PRIV */
-        op_privileged(vm, insn);
+        op_privileged(hart, insn);
         break;
 
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
@@ -688,7 +688,7 @@ static uint32_t op_rv32i(uint32_t insn, bool is_reg, uint32_t a, uint32_t b)
 }
 #undef NEG_BIT
 
-static bool op_jmp(hart_t *vm, uint32_t insn, uint32_t a, uint32_t b)
+static bool op_jmp(hart_t *hart, uint32_t insn, uint32_t a, uint32_t b)
 {
     switch (decode_func3(insn)) {
     case 0b000: /* BFUNC_BEQ */
@@ -704,62 +704,62 @@ static bool op_jmp(hart_t *vm, uint32_t insn, uint32_t a, uint32_t b)
     case 0b101: /* BFUNC_BGE */
         return ((int32_t) a) >= ((int32_t) b);
     }
-    vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+    hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
     return false;
 }
 
-static void do_jump(hart_t *vm, uint32_t addr)
+static void do_jump(hart_t *hart, uint32_t addr)
 {
     if (unlikely(addr & 0b11))
-        vm_set_exception(vm, RV_EXC_PC_MISALIGN, addr);
+        hart_set_exception(hart, RV_EXC_PC_MISALIGN, addr);
     else
-        vm->pc = addr;
+        hart->pc = addr;
 }
 
-static void op_jump_link(hart_t *vm, uint32_t insn, uint32_t addr)
+static void op_jump_link(hart_t *hart, uint32_t insn, uint32_t addr)
 {
     if (unlikely(addr & 0b11)) {
-        vm_set_exception(vm, RV_EXC_PC_MISALIGN, addr);
+        hart_set_exception(hart, RV_EXC_PC_MISALIGN, addr);
     } else {
-        set_dest(vm, insn, vm->pc);
-        vm->pc = addr;
+        set_dest(hart, insn, hart->pc);
+        hart->pc = addr;
     }
 }
 
 #define AMO_OP(STORED_EXPR)                                   \
     do {                                                      \
-        value2 = read_rs2(vm, insn);                          \
-        mmu_load(vm, addr, RV_MEM_LW, &value, false);         \
-        if (vm->error)                                        \
+        value2 = read_rs2(hart, insn);                          \
+        mmu_load(hart, addr, RV_MEM_LW, &value, false);         \
+        if (hart->error)                                        \
             return;                                           \
-        set_dest(vm, insn, value);                            \
-        mmu_store(vm, addr, RV_MEM_SW, (STORED_EXPR), false); \
+        set_dest(hart, insn, value);                            \
+        mmu_store(hart, addr, RV_MEM_SW, (STORED_EXPR), false); \
     } while (0)
 
-static void op_amo(hart_t *vm, uint32_t insn)
+static void op_amo(hart_t *hart, uint32_t insn)
 {
     if (unlikely(decode_func3(insn) != 0b010 /* amo.w */))
-        return vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
-    uint32_t addr = read_rs1(vm, insn);
+        return hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
+    uint32_t addr = read_rs1(hart, insn);
     uint32_t value, value2;
     switch (decode_func5(insn)) {
     case 0b00010: /* AMO_LR */
         if (addr & 0b11)
-            return vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, addr);
+            return hart_set_exception(hart, RV_EXC_LOAD_MISALIGN, addr);
         if (decode_rs2(insn))
-            return vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
-        mmu_load(vm, addr, RV_MEM_LW, &value, true);
-        if (vm->error)
+            return hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
+        mmu_load(hart, addr, RV_MEM_LW, &value, true);
+        if (hart->error)
             return;
-        set_dest(vm, insn, value);
+        set_dest(hart, insn, value);
         break;
     case 0b00011: /* AMO_SC */
         if (addr & 0b11)
-            return vm_set_exception(vm, RV_EXC_STORE_MISALIGN, addr);
-        bool ok = mmu_store(vm, addr, RV_MEM_SW, read_rs2(vm, insn), true);
-        if (vm->error)
+            return hart_set_exception(hart, RV_EXC_STORE_MISALIGN, addr);
+        bool ok = mmu_store(hart, addr, RV_MEM_SW, read_rs2(hart, insn), true);
+        if (hart->error)
             return;
-        set_dest(vm, insn, ok ? 0 : 1);
+        set_dest(hart, insn, ok ? 0 : 1);
         break;
 
     case 0b00001: /* AMOSWAP */
@@ -790,89 +790,89 @@ static void op_amo(hart_t *vm, uint32_t insn)
         AMO_OP(value > value2 ? value : value2);
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
 
-void vm_init(hart_t *vm)
+void hart_init(hart_t *hart)
 {
-    mmu_invalidate(vm);
+    mmu_invalidate(hart);
 }
 
 #define PRIV(x) ((emu_state_t *) x->priv)
-void vm_step(hart_t *vm)
+void hart_step(hart_t *hart)
 {
-    if (vm->hsm_status != SBI_HSM_STATE_STARTED)
+    if (hart->hsm_status != SBI_HSM_STATE_STARTED)
         return;
 
-    if (unlikely(vm->error))
+    if (unlikely(hart->error))
         return;
 
-    vm->current_pc = vm->pc;
-    if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
-        uint32_t applicable = (vm->sip & vm->sie);
+    hart->current_pc = hart->pc;
+    if ((hart->sstatus_sie || !hart->s_mode) && (hart->sip & hart->sie)) {
+        uint32_t applicable = (hart->sip & hart->sie);
         uint8_t idx = __builtin_ffs(applicable) - 1;
         if (idx == 1) {
-            emu_state_t *data = PRIV(vm);
-            data->clint.msip[vm->mhartid] = 0;
+            emu_state_t *data = PRIV(hart);
+            data->clint.msip[hart->mhartid] = 0;
         }
-        vm->exc_cause = (1U << 31) | idx;
-        vm->stval = 0;
-        hart_trap(vm);
+        hart->exc_cause = (1U << 31) | idx;
+        hart->stval = 0;
+        hart_trap(hart);
     }
 
     uint32_t insn;
-    mmu_fetch(vm, vm->pc, &insn);
-    if (unlikely(vm->error))
+    mmu_fetch(hart, hart->pc, &insn);
+    if (unlikely(hart->error))
         return;
 
-    vm->pc += 4;
+    hart->pc += 4;
     /* Assume no integer overflow */
-    vm->instret++;
+    hart->instret++;
 
     uint32_t insn_opcode = insn & MASK(7), value;
     switch (insn_opcode) {
     case RV32_OP_IMM:
-        set_dest(vm, insn,
-                 op_rv32i(insn, false, read_rs1(vm, insn), decode_i(insn)));
+        set_dest(hart, insn,
+                 op_rv32i(insn, false, read_rs1(hart, insn), decode_i(insn)));
         break;
     case RV32_OP:
         if (!(insn & (1 << 25)))
             set_dest(
-                vm, insn,
-                op_rv32i(insn, true, read_rs1(vm, insn), read_rs2(vm, insn)));
+                hart, insn,
+                op_rv32i(insn, true, read_rs1(hart, insn), read_rs2(hart, insn)));
         else
-            set_dest(vm, insn,
-                     op_mul(insn, read_rs1(vm, insn), read_rs2(vm, insn)));
+            set_dest(hart, insn,
+                     op_mul(insn, read_rs1(hart, insn), read_rs2(hart, insn)));
         break;
     case RV32_LUI:
-        set_dest(vm, insn, decode_u(insn));
+        set_dest(hart, insn, decode_u(insn));
         break;
     case RV32_AUIPC:
-        set_dest(vm, insn, decode_u(insn) + vm->current_pc);
+        set_dest(hart, insn, decode_u(insn) + hart->current_pc);
         break;
     case RV32_JAL:
-        op_jump_link(vm, insn, decode_j(insn) + vm->current_pc);
+        op_jump_link(hart, insn, decode_j(insn) + hart->current_pc);
         break;
     case RV32_JALR:
-        op_jump_link(vm, insn, (decode_i(insn) + read_rs1(vm, insn)) & ~1);
+        op_jump_link(hart, insn, (decode_i(insn) + read_rs1(hart, insn)) & ~1);
         break;
     case RV32_BRANCH:
-        if (op_jmp(vm, insn, read_rs1(vm, insn), read_rs2(vm, insn)))
-            do_jump(vm, decode_b(insn) + vm->current_pc);
+        if (op_jmp(hart, insn, read_rs1(hart, insn), read_rs2(hart, insn)))
+            do_jump(hart, decode_b(insn) + hart->current_pc);
         break;
     case RV32_LOAD:
-        mmu_load(vm, read_rs1(vm, insn) + decode_i(insn), decode_func3(insn),
+        mmu_load(hart, read_rs1(hart, insn) + decode_i(insn), decode_func3(insn),
                  &value, false);
-        if (unlikely(vm->error))
+        if (unlikely(hart->error))
             return;
-        set_dest(vm, insn, value);
+        set_dest(hart, insn, value);
         break;
     case RV32_STORE:
-        mmu_store(vm, read_rs1(vm, insn) + decode_s(insn), decode_func3(insn),
-                  read_rs2(vm, insn), false);
-        if (unlikely(vm->error))
+        mmu_store(hart, read_rs1(hart, insn) + decode_s(insn), decode_func3(insn),
+                  read_rs2(hart, insn), false);
+        if (unlikely(hart->error))
             return;
         break;
     case RV32_MISC_MEM:
@@ -882,18 +882,18 @@ void vm_step(hart_t *vm)
                     /* TODO: implement for multi-threading */
             break;
         default:
-            vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+            hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
             break;
         }
         break;
     case RV32_AMO:
-        op_amo(vm, insn);
+        op_amo(hart, insn);
         break;
     case RV32_SYSTEM:
-        op_system(vm, insn);
+        op_system(hart, insn);
         break;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         break;
     }
 }

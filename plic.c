@@ -83,7 +83,7 @@ static bool plic_reg_write(plic_state_t *plic, uint32_t addr, uint32_t value)
     }
 }
 
-void plic_read(hart_t *vm,
+void plic_read(hart_t *hart,
                plic_state_t *plic,
                uint32_t addr,
                uint8_t width,
@@ -92,21 +92,21 @@ void plic_read(hart_t *vm,
     switch (width) {
     case RV_MEM_LW:
         if (!plic_reg_read(plic, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
+            hart_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
         break;
     case RV_MEM_LBU:
     case RV_MEM_LB:
     case RV_MEM_LHU:
     case RV_MEM_LH:
-        vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_LOAD_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
 
-void plic_write(hart_t *vm,
+void plic_write(hart_t *hart,
                 plic_state_t *plic,
                 uint32_t addr,
                 uint8_t width,
@@ -115,14 +115,14 @@ void plic_write(hart_t *vm,
     switch (width) {
     case RV_MEM_SW:
         if (!plic_reg_write(plic, addr >> 2, value))
-            vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
+            hart_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
         break;
     case RV_MEM_SB:
     case RV_MEM_SH:
-        vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_STORE_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }

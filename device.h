@@ -156,13 +156,13 @@ typedef struct {
     void *priv;
 } virtio_blk_state_t;
 
-void virtio_blk_read(hart_t *vm,
+void virtio_blk_read(hart_t *hart,
                      virtio_blk_state_t *vblk,
                      uint32_t addr,
                      uint8_t width,
                      uint32_t *value);
 
-void virtio_blk_write(hart_t *vm,
+void virtio_blk_write(hart_t *hart,
                       virtio_blk_state_t *vblk,
                       uint32_t addr,
                       uint8_t width,
@@ -178,13 +178,13 @@ typedef struct {
     uint64_t mtime;
 } clint_state_t;
 
-void clint_update_interrupts(hart_t *vm, clint_state_t *clint);
-void clint_read(hart_t *vm,
+void clint_update_interrupts(hart_t *hart, clint_state_t *clint);
+void clint_read(hart_t *hart,
                 clint_state_t *clint,
                 uint32_t addr,
                 uint8_t width,
                 uint32_t *value);
-void clint_write(hart_t *vm,
+void clint_write(hart_t *hart,
                  clint_state_t *clint,
                  uint32_t addr,
                  uint8_t width,

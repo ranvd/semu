@@ -164,7 +164,7 @@ static void u8250_reg_write(u8250_state_t *uart, uint32_t addr, uint8_t value)
     }
 }
 
-void u8250_read(hart_t *vm,
+void u8250_read(hart_t *hart,
                 u8250_state_t *uart,
                 uint32_t addr,
                 uint8_t width,
@@ -183,15 +183,15 @@ void u8250_read(hart_t *vm,
     case RV_MEM_LW:
     case RV_MEM_LHU:
     case RV_MEM_LH:
-        vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_LOAD_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
 
-void u8250_write(hart_t *vm,
+void u8250_write(hart_t *hart,
                  u8250_state_t *uart,
                  uint32_t addr,
                  uint8_t width,
@@ -203,10 +203,10 @@ void u8250_write(hart_t *vm,
         break;
     case RV_MEM_SW:
     case RV_MEM_SH:
-        vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
+        hart_set_exception(hart, RV_EXC_STORE_MISALIGN, hart->exc_val);
         return;
     default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
+        hart_set_exception(hart, RV_EXC_ILLEGAL_INSN, 0);
         return;
     }
 }
