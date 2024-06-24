@@ -85,6 +85,9 @@ check: $(BIN) minimal.dtb $(KERNEL_DATA) $(INITRD_DATA) $(DISKIMG_FILE)
 	@$(call notice, Ready to launch Linux kernel. Please be patient.)
 	$(Q)./$(BIN) -k $(KERNEL_DATA) -b minimal.dtb -i $(INITRD_DATA) $(OPTS)
 
+debug: $(BIN) minimal.dtb $(KERNEL_DATA) $(INITRD_DATA) $(DISKIMG_FILE)
+	$(Q)gdb --args ./$(BIN) -k $(KERNEL_DATA) -b minimal.dtb -i $(INITRD_DATA) $(OPTS)
+
 build-image:
 	scripts/build-image.sh
 
