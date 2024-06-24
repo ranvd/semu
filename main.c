@@ -117,6 +117,7 @@ static void mem_load(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
+	    printf("CLINT WRITE\n");
             clint_read(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
         }
@@ -161,6 +162,7 @@ static void mem_store(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
+	    printf("CLINT READ\n");
             clint_write(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
             return;
@@ -187,15 +189,16 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
             (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
             (uint64_t) (hart->x_regs[RV_R_A0]);
 
-        if (hart->mhartid == 1) {
-            int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
-            dprintf(fd, "mtime: %ld, mtimecmp: %ld\n", data->clint.mtime,
-                    data->clint.mtimecmp[hart->mhartid]);
-            close(fd);
-        }
+//        if (hart->mhartid == 1) {
+//            int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
+//            dprintf(fd, "mtime: %ld, mtimecmp: %ld\n", data->clint.mtime,
+//                    data->clint.mtimecmp[hart->mhartid]);
+//            close(fd);
+//        }
         hart->sip &= ~RV_INT_STI_BIT;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
+	printf("ERRRRRRRRRRRRRRRRRRRRRR\n");
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
 }
@@ -265,9 +268,8 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
     case SBI_IPI__SEND_IPI:
         hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
         hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
-        printf("IPI from %d, mask %x, base %x\n", hart->mhartid, hart_mask, hart_mask_base);
         if (hart_mask_base == 0xFFFFFFFFFFFFFFFF) {
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < hart->vm->hart_number; i++) {
                 data->clint.msip[i] = 1;
             }
         } else {
@@ -285,9 +287,23 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
 
 static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
 {
+    uint64_t hart_mask, hart_mask_base;
     switch (fid) {
     case 0:
-    case 1:
+	return (sbi_ret_t) {SBI_SUCCESS, 0};
+    case 1:    
+        hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
+        hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
+	if (hart_mask_base == 0xFFFFFFFFFFFFFFFF){
+	    for (int i = 0; i < hart->vm->hart_number; i++) {
+		hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
+	    }
+	} else {
+	    for (int i = hart_mask_base; hart_mask; hart_mask >>= 1, i++){
+		hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
+	    }
+	}
+	return (sbi_ret_t) {SBI_SUCCESS, 0};
     case 2:
     case 3:
     case 4:
@@ -295,8 +311,8 @@ static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
     case 6:
     case 7:
         return (sbi_ret_t){SBI_SUCCESS, 0};
-        break;
     default:
+	printf("RFENCE DEFAULT\n");
         return (sbi_ret_t){SBI_ERR_FAILED, 0};
     }
 }
@@ -568,8 +584,21 @@ static int semu_start(int argc, char **argv)
 
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
+    int cccc = 0;
     while (!emu.stopped) {
         emu.clint.mtime++;
+	
+	/* Loging interrupt status */
+	if (cccc-- == 0){
+	cccc = 2000;
+	int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
+	dprintf(fd, "hart ,interrupt ,enable    ,status\n");
+	for (int i = 0; i < 4; i++){
+	    dprintf(fd, "%-4d,%-10x,%-10x,%d, %x, %x\n", i, vm.hart[i]->sip, vm.hart[i]->sie, vm.hart[i]->hsm_status, emu.clint.mtimecmp[i], vm.hart[i]->time);
+	}
+        close(fd);
+	}
+ 
         for (int i = 0; i < 4; i++) {
             if (peripheral_update_ctr-- == 0) {
                 peripheral_update_ctr = 64;

@@ -359,11 +359,6 @@ void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val)
 int counter = 0;
 void hart_trap(hart_t *vm)
 {
-    if (vm->mhartid == 1 && (vm->sip == RV_INT_STI_BIT)) {
-        int fd = open("semu.log", O_RDWR|O_APPEND|O_CREAT, S_IRWXU);
-        dprintf(fd, "%d Interrupt: %x\n", counter++, vm->sip);
-        close(fd);
-    }
     /* Fill exception fields */
     vm->scause = vm->exc_cause;
     vm->stval = vm->exc_val;
