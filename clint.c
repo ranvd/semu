@@ -64,7 +64,6 @@ void clint_read(hart_t *vm,
                 uint8_t width,
                 uint32_t *value)
 {
-    printf("CCCCCCCCCCCCCCLINT read\n");
     if (!clint_reg_read(clint, addr, value))
         vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
     *value = (*value) >> (RV_MEM_SW - width);
@@ -77,7 +76,6 @@ void clint_write(hart_t *vm,
                  uint8_t width,
                  uint32_t value)
 {
-    printf("CCCCCCCCCCCCCCLINT write\n");
     if (!clint_reg_write(clint, addr, value >> (RV_MEM_SW - width)))
         vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
     return;

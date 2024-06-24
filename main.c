@@ -117,7 +117,6 @@ static void mem_load(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
-            printf("\x1b[32mread timer\x1b[0m\n");
             clint_read(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
         }
@@ -162,7 +161,6 @@ static void mem_store(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
-            printf("\x1b[32mwrite timer\x1b[0m\n");
             clint_write(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
             return;
