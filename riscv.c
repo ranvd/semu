@@ -791,7 +791,6 @@ void vm_step(vm_t *vm)
         return;
 
     vm->current_pc = vm->pc;
-
     if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
         uint32_t applicable = (vm->sip & vm->sie);
         uint8_t idx = ilog2(applicable);
