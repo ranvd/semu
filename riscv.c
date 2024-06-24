@@ -351,13 +351,8 @@ void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val)
     vm->exc_val = val;
 }
 
-extern int flag;
 void hart_trap(hart_t *vm)
 {
-    //    if (flag){
-    //	    printf ("vmid: %d\n", vm->mhartid);
-    //	    printf ("Software Interrupt: %d\n", vm->sip & RV_INT_SSI_BIT);
-    //    }
     /* Fill exception fields */
     vm->scause = vm->exc_cause;
     vm->stval = vm->exc_val;
@@ -452,7 +447,7 @@ static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
     default:
         break;
     }
-    
+
     if (!vm->s_mode) {
         vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
         return;

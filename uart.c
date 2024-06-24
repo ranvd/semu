@@ -49,7 +49,10 @@ void u8250_update_interrupts(u8250_state_t *uart)
 
     /* Update current interrupt (higher bits -> more priority) */
     if (uart->pending_ints)
-        uart->current_int = ilog2(uart->pending_ints);
+        uart->current_int =
+            ilog2(uart->pending_ints) | (1 << !ilog2(uart->pending_ints));
+    else
+        uart->current_int = 0;
 }
 
 void u8250_check_ready(u8250_state_t *uart)
@@ -100,6 +103,7 @@ static void u8250_reg_read(u8250_state_t *uart, uint32_t addr, uint8_t *value)
             break;
         }
         *value = u8250_handle_in(uart);
+        uart->pending_ints &= ~1;
         break;
     case 1:
         if (uart->lcr & (1 << 7)) { /* DLAB */
@@ -111,7 +115,7 @@ static void u8250_reg_read(u8250_state_t *uart, uint32_t addr, uint8_t *value)
     case 2:
         *value = (uart->current_int << 1) | (uart->pending_ints ? 0 : 1);
         if (uart->current_int == U8250_INT_THRE)
-            uart->pending_ints &= ~(1 << uart->current_int);
+            uart->pending_ints &= ~(1 << U8250_INT_THRE);
         break;
     case 3:
         *value = uart->lcr;
