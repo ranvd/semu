@@ -313,8 +313,10 @@ static void mmu_load(hart_t *vm,
     if (vm->error)
         return;
 
-    if (unlikely(reserved))
+    if (unlikely(reserved)) {
         vm->lr_reservation = addr | 1;
+        vm->lr_val = *value;
+    }
 }
 
 static bool mmu_store(hart_t *vm,
@@ -330,8 +332,11 @@ static bool mmu_store(hart_t *vm,
         return false;
 
     if (unlikely(cond)) {
-        if (vm->lr_reservation != (addr | 1))
+        uint32_t cas_value;
+        vm->mem_load(vm, addr, width, &cas_value);
+        if ((vm->lr_reservation != (addr | 1)) || vm->lr_val != cas_value)
             return false;
+
         vm->lr_reservation = 0;
     } else {
         if (unlikely(vm->lr_reservation & 1) &&

@@ -57,6 +57,7 @@ struct __hart_internal {
 
     /* LR reservation virtual address. last bit is 1 if valid */
     uint32_t lr_reservation;
+    uint32_t lr_val;
 
     /* Assumed to contain an aligned address at all times */
     uint32_t pc;
