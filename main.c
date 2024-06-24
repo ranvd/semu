@@ -75,10 +75,10 @@ static void emu_update_vblk_interrupts(hart_t *hart)
 static void emu_update_timer_interrupt(hart_t *hart)
 {
     emu_state_t *data = PRIV(hart);
-    data->clint.mtime++;
     clint_update_interrupts(hart, &data->clint);
     /* TODO: */
 }
+
 static void mem_load(hart_t *hart, uint32_t addr, uint8_t width, uint32_t *value)
 {
     emu_state_t *data = PRIV(hart);
@@ -181,7 +181,7 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
         data->clint.mtimecmp[hart->mhartid] = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
                       (uint64_t) (hart->x_regs[RV_R_A0]);
 
-	//hart->sip &= ~RV_INT_STI;
+	hart->sip &= ~RV_INT_STI;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
@@ -208,12 +208,9 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
     vm_t *vm = hart->vm;
     switch (fid) {
     case SBI_HSM__HART_START:
-	hartid = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
-		(uint64_t) (hart->x_regs[RV_R_A0]);
-	start_addr =  (((uint64_t) hart->x_regs[RV_R_A3]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A2];
-        opaque =  (((uint64_t) hart->x_regs[RV_R_A5]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A4];
+	hartid = (uint64_t) (hart->x_regs[RV_R_A0]);
+	start_addr = (uint64_t) hart->x_regs[RV_R_A1];
+        opaque = (uint64_t) hart->x_regs[RV_R_A2];
 	vm->hart[hartid]->hsm_status = SBI_HSM_STATE_STARTED;
 	vm->hart[hartid]->satp = 0;
 	vm->hart[hartid]->sstatus_sie = 0;
@@ -225,16 +222,12 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
         hart->hsm_status = SBI_HSM_STATE_STOPPED;
 	return (sbi_ret_t){SBI_SUCCESS, 0};
     case SBI_HSM__HART_GET_STATUS:
-        hartid = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A0];
+	hartid = (uint64_t) (hart->x_regs[RV_R_A0]);
 	return (sbi_ret_t){SBI_SUCCESS, vm->hart[hartid]->hsm_status};
     case SBI_HSM__HART_SUSPEND:
-	suspend_type = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A0];
-	resume_addr =  (((uint64_t) hart->x_regs[RV_R_A3]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A2];
-        opaque =  (((uint64_t) hart->x_regs[RV_R_A5]) << 32) |
-		(uint64_t) hart->x_regs[RV_R_A4];
+	suspend_type = (uint64_t) hart->x_regs[RV_R_A0];
+	resume_addr = (uint64_t) hart->x_regs[RV_R_A1];
+        opaque = (uint64_t) hart->x_regs[RV_R_A2];
 	hart->hsm_status = SBI_HSM_STATE_SUSPENDED;
 	if (suspend_type == 0x00000000){
 	    hart->hsm_resume_is_ret = true;
@@ -249,6 +242,41 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
     	return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
     return (sbi_ret_t){SBI_ERR_FAILED, 0};
+}
+
+int flag = 0;
+
+static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
+{
+    emu_state_t *data = PRIV(hart);
+    uint64_t hart_mask, hart_mask_base;
+    switch (fid) {
+    case SBI_IPI__SEND_IPI:
+        hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
+        hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
+	printf("IPI from: %d\n", hart->mhartid);
+	printf("a0: %d, a1: %d, a2: %d, a3: %d\n", 
+		hart->x_regs[RV_R_A0],
+		hart->x_regs[RV_R_A1],
+		hart->x_regs[RV_R_A2],
+		hart->x_regs[RV_R_A3]
+	);
+	flag = 1;
+	if (hart_mask_base == 0xFFFFFFFFFFFFFFFF){
+            for (int i = 0; i < 2; i++){
+		    data->clint.msip[hart->mhartid] = 1;
+	    }
+	} else {
+	    for (int i = hart_mask_base; hart_mask; hart_mask >>= 1, i++){
+	    	data->clint.msip[i] = hart_mask & 1;
+	    }
+	}
+
+	return (sbi_ret_t) {SBI_SUCCESS, 0};
+	break;
+    default:
+	return (sbi_ret_t) {SBI_ERR_FAILED, 0};
+    }
 }
 
 #define RV_MVENDORID 0x12345678
@@ -273,7 +301,8 @@ static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *hart, int32_t fid)
     case SBI_BASE__PROBE_EXTENSION: {
         int32_t eid = (int32_t) hart->x_regs[RV_R_A0];
         bool available =
-            eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST || eid == SBI_EID_HSM;
+            eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST || eid == SBI_EID_HSM
+	    || eid == SBI_EID_IPI;
         return (sbi_ret_t){SBI_SUCCESS, available};
     }
     default:
@@ -298,6 +327,9 @@ static void handle_sbi_ecall(hart_t *hart)
         break;
     case SBI_EID_HSM:
 	SBI_HANDLE(HSM);
+	break;
+    case SBI_EID_IPI:
+	SBI_HANDLE(IPI);
 	break;
     default:
         ret = (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
@@ -544,10 +576,9 @@ static int semu_start(int argc, char **argv)
 #endif
         }
 
+        emu.clint.mtime++;
 	for (int i = 0; i < 2; i++){
-	
 	    emu_update_timer_interrupt(vm.hart[i]);
-
         //if (vm.insn_count > emu.timer)
          //   vm.sip |= RV_INT_STI_BIT;
         //else
