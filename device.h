@@ -205,5 +205,4 @@ typedef struct {
     virtio_blk_state_t vblk;
 #endif
     clint_state_t clint;
-    uint64_t timer;
 } emu_state_t;

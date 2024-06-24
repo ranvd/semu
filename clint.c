@@ -5,9 +5,6 @@
 
 void clint_update_interrupts(hart_t *hart, clint_state_t *clint)
 {
-    /* Sync the time with hart */
-    hart->time = clint->mtime;
-
     if (clint->mtime > clint->mtimecmp[hart->mhartid])
         hart->sip |= RV_INT_STI_BIT;
     else

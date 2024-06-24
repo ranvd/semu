@@ -77,8 +77,17 @@ static void emu_update_vblk_interrupts(vm_t *vm)
 static void emu_update_timer_interrupt(hart_t *hart)
 {
     emu_state_t *data = PRIV(hart);
+
+    /* Sync global timer with local timer */
+    hart->time = data->clint.mtime;
     clint_update_interrupts(hart, &data->clint);
-    /* TODO: */
+}
+
+static void emu_update_global_timer(vm_t *vm)
+{
+    emu_state_t *data = PRIV(vm->hart[0]);
+    data->clint.mtime++;
+    return;
 }
 
 static void mem_load(hart_t *hart,
@@ -211,13 +220,13 @@ static inline sbi_ret_t handle_sbi_ecall_RST(hart_t *hart, int32_t fid)
 
 static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
 {
-    uint64_t hartid, start_addr, opaque, suspend_type, resume_addr;
+    uint32_t hartid, start_addr, opaque, suspend_type, resume_addr;
     vm_t *vm = hart->vm;
     switch (fid) {
     case SBI_HSM__HART_START:
-        hartid = (uint64_t) (hart->x_regs[RV_R_A0]);
-        start_addr = (uint64_t) hart->x_regs[RV_R_A1];
-        opaque = (uint64_t) hart->x_regs[RV_R_A2];
+        hartid = hart->x_regs[RV_R_A0];
+        start_addr = hart->x_regs[RV_R_A1];
+        opaque = hart->x_regs[RV_R_A2];
         vm->hart[hartid]->hsm_status = SBI_HSM_STATE_STARTED;
         vm->hart[hartid]->satp = 0;
         vm->hart[hartid]->sstatus_sie = 0;
@@ -230,12 +239,12 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
         hart->hsm_status = SBI_HSM_STATE_STOPPED;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     case SBI_HSM__HART_GET_STATUS:
-        hartid = (uint64_t) (hart->x_regs[RV_R_A0]);
+        hartid = hart->x_regs[RV_R_A0];
         return (sbi_ret_t){SBI_SUCCESS, vm->hart[hartid]->hsm_status};
     case SBI_HSM__HART_SUSPEND:
-        suspend_type = (uint64_t) hart->x_regs[RV_R_A0];
-        resume_addr = (uint64_t) hart->x_regs[RV_R_A1];
-        opaque = (uint64_t) hart->x_regs[RV_R_A2];
+        suspend_type = hart->x_regs[RV_R_A0];
+        resume_addr = hart->x_regs[RV_R_A1];
+        opaque = hart->x_regs[RV_R_A2];
         hart->hsm_status = SBI_HSM_STATE_SUSPENDED;
         if (suspend_type == 0x00000000) {
             hart->hsm_resume_is_ret = true;
@@ -279,6 +288,7 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
 
 static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
 {
+    /* TODO */
     uint64_t hart_mask, hart_mask_base;
     switch (fid) {
     case 0:
@@ -484,6 +494,20 @@ static void handle_options(int argc,
         *dtb_file = "minimal.dtb";
 }
 
+
+#define INIT_HART(hart, emu, id)                  \
+    ({                                            \
+        hart->priv = emu;                         \
+        hart->mhartid = id;                       \
+        hart->mem_fetch = mem_fetch;              \
+        hart->mem_load = mem_load;                \
+        hart->mem_store = mem_store;              \
+        hart->mem_page_table = mem_page_table;    \
+        hart->s_mode = true;                      \
+        hart->hsm_status = SBI_HSM_STATE_STOPPED; \
+        vm_init(hart);                            \
+    })
+
 static int semu_start(int argc, char **argv)
 {
     char *kernel_file;
@@ -532,30 +556,17 @@ static int semu_start(int argc, char **argv)
     atexit(unmap_files);
 
     /* Set up RISC-V hart */
-    emu.clint.mtimecmp[0] = 0xFFFFFFFFFFFFFFFF;
-    emu.clint.mtimecmp[1] = 0xFFFFFFFFFFFFFFFF;
-    emu.clint.mtime = 0;
-    // emu.timer = 0xFFFFFFFFFFFFFFFF;
-
     vm_t vm;
     vm.hart_number = 4;
     vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
     for (uint32_t i = 0; i < vm.hart_number; i++) {
         hart_t *newhart = malloc(sizeof(hart_t));
-        newhart->priv = &emu;
-        newhart->mhartid = i;
-        newhart->mem_fetch = mem_fetch;
-        newhart->mem_load = mem_load;
-        newhart->mem_store = mem_store;
-        newhart->mem_page_table = mem_page_table;
-        vm_init(newhart);
-        newhart->s_mode = true;
+        INIT_HART(newhart, &emu, i);
         newhart->x_regs[RV_R_A0] = i;
         newhart->x_regs[RV_R_A1] = dtb_addr;
         if (i == 0)
             newhart->hsm_status = SBI_HSM_STATE_STARTED;
-        else
-            newhart->hsm_status = SBI_HSM_STATE_STOPPED;
+
         newhart->vm = &vm;
         vm.hart[i] = newhart;
     }
@@ -576,7 +587,7 @@ static int semu_start(int argc, char **argv)
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
-        emu.clint.mtime++;
+        emu_update_global_timer(&vm);
 
         for (uint32_t i = 0; i < vm.hart_number; i++) {
             if (peripheral_update_ctr-- == 0) {
