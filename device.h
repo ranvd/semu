@@ -25,7 +25,7 @@ void ram_write(hart_t *core,
 
 typedef struct {
     uint32_t masked;
-    uint32_t ip; /* support 32 interrupt sources only */
+    uint32_t ip;     /* support 32 interrupt sources only */
     uint32_t ie[32]; /* support 32 sources to 32 contexts only */
     /* state of input interrupt lines (level-triggered), set by environment */
     uint32_t active;
@@ -180,15 +180,15 @@ typedef struct {
 
 void clint_update_interrupts(hart_t *vm, clint_state_t *clint);
 void clint_read(hart_t *vm,
-               clint_state_t *clint,
-               uint32_t addr,
-               uint8_t width,
-               uint32_t *value);
-void clint_write(hart_t *vm,
                 clint_state_t *clint,
                 uint32_t addr,
                 uint8_t width,
-                uint32_t value);
+                uint32_t *value);
+void clint_write(hart_t *vm,
+                 clint_state_t *clint,
+                 uint32_t addr,
+                 uint8_t width,
+                 uint32_t value);
 
 /* memory mapping */
 

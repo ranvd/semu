@@ -97,7 +97,7 @@
             compatible = "sifive,plic-1.0.0";
             reg = <0x0000000 0x4000000>;
             interrupt-controller;
-            interrupts-extended = <&cpu0_intc 9>, <&cpu1_intc 9>;
+            interrupts-extended = <&cpu0_intc 9>, <&cpu1_intc 9>, <&cpu2_intc 9>, <&cpu3_intc 9>;
             riscv,ndev = <31>;
         };
 
@@ -124,12 +124,12 @@
             interrupts = <3>;
         };
 #endif
-	clint0: clint@4300000 {
-    		compatible = "riscv,clint0";
-	    	interrupt-controller;
-    		interrupts-extended = <&cpu0_intc 5>;
-    		reg = <0x4300000 0x10000>;
-  	};
+    };
 
+    clint0: clint@4300000 {
+        compatible = "riscv,clint0";
+        interrupt-controller;
+        interrupts-extended = <&cpu0_intc 5>;
+        reg = <0x4300000 0x10000>;
     };
 };
