@@ -50,6 +50,7 @@ typedef struct {
  * described above for reference.
  */
 typedef struct __hart_internal hart_t;
+typedef struct __vm_internel vm_t;
 
 struct __hart_internal {
     uint32_t x_regs[32];
@@ -105,6 +106,7 @@ struct __hart_internal {
     
     /* Machine state */
     uint32_t mhartid;
+
     void *priv; /**< environment supplied */
 
     /* Memory access sets the vm->error to indicate failure. On successful
@@ -119,13 +121,20 @@ struct __hart_internal {
      * a uint32_t * to the page if valid.
      */
     uint32_t *(*mem_page_table)(const hart_t *vm, uint32_t ppn);
+
+    /* Point to the belonged vm_t */
+    vm_t *vm;
+    int32_t hsm_status;
+    bool hsm_resume_is_ret;
+    int32_t hsm_resume_pc;
+    int32_t hsm_resume_opaque;
 };
 
-typedef struct __vm_internel vm_t;
 struct __vm_internel {
     uint32_t hart_number;
-    hart_t *hart[];
-}
+    hart_t **hart;
+};
+
 void vm_init(hart_t *vm);
 
 /* Emulate the next instruction. This is a no-op if the error is already set. */

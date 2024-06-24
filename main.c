@@ -17,74 +17,74 @@
 /* Define fetch separately since it is simpler (fixed width, already checked
  * alignment, only main RAM is executable).
  */
-static void mem_fetch(hart_t *vm, uint32_t n_pages, uint32_t **page_addr)
+static void mem_fetch(hart_t *hart, uint32_t n_pages, uint32_t **page_addr)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     if (unlikely(n_pages >= RAM_SIZE / RV_PAGE_SIZE)) {
         /* TODO: check for other regions */
-        vm_set_exception(vm, RV_EXC_FETCH_FAULT, vm->exc_val);
+        vm_set_exception(hart, RV_EXC_FETCH_FAULT, hart->exc_val);
         return;
     }
     *page_addr = &data->ram[n_pages << (RV_PAGE_SHIFT - 2)];
 }
 
 /* Similarly, only main memory pages can be used as page tables. */
-static uint32_t *mem_page_table(const hart_t *vm, uint32_t ppn)
+static uint32_t *mem_page_table(const hart_t *hart, uint32_t ppn)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     if (ppn < (RAM_SIZE / RV_PAGE_SIZE))
         return &data->ram[ppn << (RV_PAGE_SHIFT - 2)];
     return NULL;
 }
 
-static void emu_update_uart_interrupts(hart_t *vm)
+static void emu_update_uart_interrupts(hart_t *hart)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     u8250_update_interrupts(&data->uart);
     if (data->uart.pending_ints)
         data->plic.active |= IRQ_UART_BIT;
     else
         data->plic.active &= ~IRQ_UART_BIT;
-    plic_update_interrupts(vm, &data->plic);
+    plic_update_interrupts(hart, &data->plic);
 }
 
 #if SEMU_HAS(VIRTIONET)
-static void emu_update_vnet_interrupts(hart_t *vm)
+static void emu_update_vnet_interrupts(hart_t *hart)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     if (data->vnet.InterruptStatus)
         data->plic.active |= IRQ_VNET_BIT;
     else
         data->plic.active &= ~IRQ_VNET_BIT;
-    plic_update_interrupts(vm, &data->plic);
+    plic_update_interrupts(hart, &data->plic);
 }
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
-static void emu_update_vblk_interrupts(hart_t *vm)
+static void emu_update_vblk_interrupts(hart_t *hart)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     if (data->vblk.InterruptStatus)
         data->plic.active |= IRQ_VBLK_BIT;
     else
         data->plic.active &= ~IRQ_VBLK_BIT;
-    plic_update_interrupts(vm, &data->plic);
+    plic_update_interrupts(hart, &data->plic);
 }
 #endif
 
-static void emu_update_timer_interrupt(hart_t *vm)
+static void emu_update_timer_interrupt(hart_t *hart)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     data->clint.mtime++;
-    clint_update_interrupts(vm, &data->clint);
+    clint_update_interrupts(hart, &data->clint);
     /* TODO: */
 }
-static void mem_load(hart_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
+static void mem_load(hart_t *hart, uint32_t addr, uint8_t width, uint32_t *value)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     /* RAM at 0x00000000 + RAM_SIZE */
     if (addr < RAM_SIZE) {
-        ram_read(vm, data->ram, addr, width, value);
+        ram_read(hart, data->ram, addr, width, value);
         return;
     }
 
@@ -93,40 +93,40 @@ static void mem_load(hart_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
         switch ((addr >> 20) & MASK(8)) {
         case 0x0:
         case 0x2: /* PLIC (0 - 0x3F) */
-            plic_read(vm, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(vm, &data->plic);
+            plic_read(hart, &data->plic, addr & 0x3FFFFFF, width, value);
+            plic_update_interrupts(hart, &data->plic);
             return;
         case 0x40: /* UART */
-            u8250_read(vm, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(vm);
+            u8250_read(hart, &data->uart, addr & 0xFFFFF, width, value);
+            emu_update_uart_interrupts(hart);
             return;
 #if SEMU_HAS(VIRTIONET)
         case 0x41: /* virtio-net */
-            virtio_net_read(vm, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(vm);
+            virtio_net_read(hart, &data->vnet, addr & 0xFFFFF, width, value);
+            emu_update_vnet_interrupts(hart);
             return;
 #endif
 #if SEMU_HAS(VIRTIOBLK)
         case 0x42: /* virtio-blk */
-            virtio_blk_read(vm, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(vm);
+            virtio_blk_read(hart, &data->vblk, addr & 0xFFFFF, width, value);
+            emu_update_vblk_interrupts(hart);
             return;
 #endif
 	case 0x43: /* clint */
 	    printf("\x1b[32mread timer\x1b[0m\n");	
-	    clint_read(vm, &data->clint, addr & 0xFFFFF, width, value);
-	    clint_update_interrupts(vm, &data->clint);
+	    clint_read(hart, &data->clint, addr & 0xFFFFF, width, value);
+	    clint_update_interrupts(hart, &data->clint);
         }
     }
-    vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
+    vm_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
 }
 
-static void mem_store(hart_t *vm, uint32_t addr, uint8_t width, uint32_t value)
+static void mem_store(hart_t *hart, uint32_t addr, uint8_t width, uint32_t value)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     /* RAM at 0x00000000 + RAM_SIZE */
     if (addr < RAM_SIZE) {
-        ram_write(vm, data->ram, addr, width, value);
+        ram_write(hart, data->ram, addr, width, value);
         return;
     }
 
@@ -135,33 +135,33 @@ static void mem_store(hart_t *vm, uint32_t addr, uint8_t width, uint32_t value)
         switch ((addr >> 20) & MASK(8)) {
         case 0x0:
         case 0x2: /* PLIC (0 - 0x3F) */
-            plic_write(vm, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(vm, &data->plic);
+            plic_write(hart, &data->plic, addr & 0x3FFFFFF, width, value);
+            plic_update_interrupts(hart, &data->plic);
             return;
         case 0x40: /* UART */
-            u8250_write(vm, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(vm);
+            u8250_write(hart, &data->uart, addr & 0xFFFFF, width, value);
+            emu_update_uart_interrupts(hart);
             return;
 #if SEMU_HAS(VIRTIONET)
         case 0x41: /* virtio-net */
-            virtio_net_write(vm, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(vm);
+            virtio_net_write(hart, &data->vnet, addr & 0xFFFFF, width, value);
+            emu_update_vnet_interrupts(hart);
             return;
 #endif
 #if SEMU_HAS(VIRTIOBLK)
         case 0x42: /* virtio-blk */
-            virtio_blk_write(vm, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(vm);
+            virtio_blk_write(hart, &data->vblk, addr & 0xFFFFF, width, value);
+            emu_update_vblk_interrupts(hart);
             return;
 #endif
 	case 0x43: /* clint */
 	    printf("\x1b[32mwrite timer\x1b[0m\n");	
-	    clint_write(vm, &data->clint, addr & 0xFFFFF, width, value);
-	    clint_update_interrupts(vm, &data->clint);
+	    clint_write(hart, &data->clint, addr & 0xFFFFF, width, value);
+	    clint_update_interrupts(hart, &data->clint);
 	    return;
         }
     }
-    vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
+    vm_set_exception(hart, RV_EXC_STORE_FAULT, hart->exc_val);
 }
 
 /* SBI */
@@ -173,30 +173,30 @@ typedef struct {
     int32_t value;
 } sbi_ret_t;
 
-static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     switch (fid) {
     case SBI_TIMER__SET_TIMER:
-        data->clint.mtimecmp[0] = (((uint64_t) vm->x_regs[RV_R_A1]) << 32) |
-                      (uint64_t) (vm->x_regs[RV_R_A0]);
-	//data->timer = (((uint64_t) vm->x_regs[RV_R_A1]) << 32) |
-         //             (uint64_t) (vm->x_regs[RV_R_A0]);
+        data->clint.mtimecmp[0] = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+                      (uint64_t) (hart->x_regs[RV_R_A0]);
+	//data->timer = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+         //             (uint64_t) (hart->x_regs[RV_R_A0]);
 
-	//vm->sip &= ~RV_INT_STI;
+	//hart->sip &= ~RV_INT_STI;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
 }
 
-static inline sbi_ret_t handle_sbi_ecall_RST(hart_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_RST(hart_t *hart, int32_t fid)
 {
-    emu_state_t *data = PRIV(vm);
+    emu_state_t *data = PRIV(hart);
     switch (fid) {
     case SBI_RST__SYSTEM_RESET:
         fprintf(stderr, "system reset: type=%u, reason=%u\n",
-                vm->x_regs[RV_R_A0], vm->x_regs[RV_R_A1]);
+                hart->x_regs[RV_R_A0], hart->x_regs[RV_R_A1]);
         data->stopped = true;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
@@ -204,16 +204,60 @@ static inline sbi_ret_t handle_sbi_ecall_RST(hart_t *vm, int32_t fid)
     }
 }
 
-//static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *vm, int32_f fid)
-//{
-//	/* TODO */
-//}
+static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
+{
+    uint64_t hartid, start_addr, opaque, suspend_type, resume_addr;
+    vm_t *vm = hart->vm;
+    switch (fid) {
+    case SBI_HSM__HART_START:
+	hartid = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+		(uint64_t) (hart->x_regs[RV_R_A0]);
+	start_addr =  (((uint64_t) hart->x_regs[RV_R_A3]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A2];
+        opaque =  (((uint64_t) hart->x_regs[RV_R_A5]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A4];
+	vm->hart[hartid]->hsm_status = SBI_HSM_STATE_STARTED;
+	vm->hart[hartid]->satp = 0;
+	vm->hart[hartid]->sstatus_sie = 0;
+	vm->hart[hartid]->x_regs[RV_R_A0] = hartid;
+	vm->hart[hartid]->x_regs[RV_R_A0] = opaque;
+	vm->hart[hartid]->pc = start_addr;
+	return (sbi_ret_t){SBI_SUCCESS, 0};
+    case SBI_HSM__HART_STOP:
+        hart->hsm_status = SBI_HSM_STATE_STOPPED;
+	return (sbi_ret_t){SBI_SUCCESS, 0};
+    case SBI_HSM__HART_GET_STATUS:
+        hartid = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A0];
+	return (sbi_ret_t){SBI_SUCCESS, vm->hart[hartid]->hsm_status};
+    case SBI_HSM__HART_SUSPEND:
+	suspend_type = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A0];
+	resume_addr =  (((uint64_t) hart->x_regs[RV_R_A3]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A2];
+        opaque =  (((uint64_t) hart->x_regs[RV_R_A5]) << 32) |
+		(uint64_t) hart->x_regs[RV_R_A4];
+	hart->hsm_status = SBI_HSM_STATE_SUSPENDED;
+	if (suspend_type == 0x00000000){
+	    hart->hsm_resume_is_ret = true;
+	    hart->hsm_resume_pc = hart->pc;
+	} else if (suspend_type == 0x80000000) {
+	    hart->hsm_resume_is_ret = false;
+	    hart->hsm_resume_pc = resume_addr;
+	    hart->hsm_resume_opaque = opaque;
+	}
+	return (sbi_ret_t){SBI_SUCCESS, 0};
+    default:
+    	return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
+    }
+    return (sbi_ret_t){SBI_ERR_FAILED, 0};
+}
 
 #define RV_MVENDORID 0x12345678
 #define RV_MARCHID ((1ULL << 31) | 1)
 #define RV_MIMPID 1
 
-static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *hart, int32_t fid)
 {
     switch (fid) {
     case SBI_BASE__GET_SBI_IMPL_ID:
@@ -229,9 +273,9 @@ static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *vm, int32_t fid)
     case SBI_BASE__GET_SBI_SPEC_VERSION:
         return (sbi_ret_t){SBI_SUCCESS, (0 << 24) | 3}; /* version 0.3 */
     case SBI_BASE__PROBE_EXTENSION: {
-        int32_t eid = (int32_t) vm->x_regs[RV_R_A0];
+        int32_t eid = (int32_t) hart->x_regs[RV_R_A0];
         bool available =
-            eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST;
+            eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST || eid == SBI_EID_HSM;
         return (sbi_ret_t){SBI_SUCCESS, available};
     }
     default:
@@ -239,12 +283,12 @@ static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *vm, int32_t fid)
     }
 }
 
-#define SBI_HANDLE(TYPE) ret = handle_sbi_ecall_##TYPE(vm, vm->x_regs[RV_R_A6])
+#define SBI_HANDLE(TYPE) ret = handle_sbi_ecall_##TYPE(hart, hart->x_regs[RV_R_A6])
 
-static void handle_sbi_ecall(hart_t *vm)
+static void handle_sbi_ecall(hart_t *hart)
 {
     sbi_ret_t ret;
-    switch (vm->x_regs[RV_R_A7]) {
+    switch (hart->x_regs[RV_R_A7]) {
     case SBI_EID_BASE:
         SBI_HANDLE(BASE);
         break;
@@ -254,17 +298,17 @@ static void handle_sbi_ecall(hart_t *vm)
     case SBI_EID_RST:
         SBI_HANDLE(RST);
         break;
-//    case SBI_EID_HSM:
-//	SBI_HANDLE(HSM);
-//	break;
+    case SBI_EID_HSM:
+	SBI_HANDLE(HSM);
+	break;
     default:
         ret = (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
-    vm->x_regs[RV_R_A0] = (uint32_t) ret.error;
-    vm->x_regs[RV_R_A1] = (uint32_t) ret.value;
+    hart->x_regs[RV_R_A0] = (uint32_t) ret.error;
+    hart->x_regs[RV_R_A1] = (uint32_t) ret.value;
 
     /* Clear error to allow execution to continue */
-    vm->error = ERR_NONE;
+    hart->error = ERR_NONE;
 }
 
 #define MAPPER_SIZE 4
@@ -390,14 +434,16 @@ static int semu_start(int argc, char **argv)
     emu_state_t emu;
     memset(&emu, 0, sizeof(emu));
 
-    hart_t vm = {
+    hart_t hart0 = {
         .priv = &emu,
+	.mhartid = 0,
         .mem_fetch = mem_fetch,
         .mem_load = mem_load,
         .mem_store = mem_store,
         .mem_page_table = mem_page_table,
+	.hsm_status = SBI_HSM_STATE_STARTED
     };
-    vm_init(&vm);
+    vm_init(&hart0);
 
     /* Set up RAM */
     emu.ram = mmap(NULL, RAM_SIZE, PROT_READ | PROT_WRITE,
@@ -437,9 +483,9 @@ static int semu_start(int argc, char **argv)
     emu.clint.mtimecmp[0] = 0xFFFFFFFFFFFFFFFF;
     emu.clint.mtime = 0;
     //emu.timer = 0xFFFFFFFFFFFFFFFF;
-    vm.s_mode = true;
-    vm.x_regs[RV_R_A0] = 0; /* hart ID. i.e., cpuid */
-    vm.x_regs[RV_R_A1] = dtb_addr;
+    hart0.s_mode = true;
+    hart0.x_regs[RV_R_A0] = 0; /* hart ID. i.e., cpuid */
+    hart0.x_regs[RV_R_A1] = dtb_addr;
 
     /* Set up peripherals */
     emu.uart.in_fd = 0, emu.uart.out_fd = 1;
@@ -454,6 +500,12 @@ static int semu_start(int argc, char **argv)
     emu.disk = virtio_blk_init(&(emu.vblk), disk_file);
 #endif
 
+    vm_t vm;
+    vm.hart_number = 1;
+    vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
+    vm.hart[0] = &hart0;
+    vm.hart[0]->vm = &vm;
+
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
@@ -462,42 +514,42 @@ static int semu_start(int argc, char **argv)
 
             u8250_check_ready(&emu.uart);
             if (emu.uart.in_ready)
-                emu_update_uart_interrupts(&vm);
+                emu_update_uart_interrupts(vm.hart[0]);
 
 #if SEMU_HAS(VIRTIONET)
             virtio_net_refresh_queue(&emu.vnet);
             if (emu.vnet.InterruptStatus)
-                emu_update_vnet_interrupts(&vm);
+                emu_update_vnet_interrupts(vm.hart[0]);
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
             if (emu.vblk.InterruptStatus)
-                emu_update_vblk_interrupts(&vm);
+                emu_update_vblk_interrupts(vm.hart[0]);
 #endif
         }
 
-	emu_update_timer_interrupt(&vm);
+	emu_update_timer_interrupt(vm.hart[0]);
 
         //if (vm.insn_count > emu.timer)
          //   vm.sip |= RV_INT_STI_BIT;
         //else
         //    vm.sip &= ~RV_INT_STI_BIT;
 
-        vm_step(&vm);
-        if (likely(!vm.error))
+        vm_step(vm.hart[0]);
+        if (likely(!vm.hart[0]->error))
             continue;
 
-        if (vm.error == ERR_EXCEPTION && vm.exc_cause == RV_EXC_ECALL_S) {
-            handle_sbi_ecall(&vm);
-            continue;
-        }
-
-        if (vm.error == ERR_EXCEPTION) {
-            hart_trap(&vm);
+        if (vm.hart[0]->error == ERR_EXCEPTION && vm.hart[0]->exc_cause == RV_EXC_ECALL_S) {
+            handle_sbi_ecall(vm.hart[0]);
             continue;
         }
 
-        vm_error_report(&vm);
+        if (vm.hart[0]->error == ERR_EXCEPTION) {
+            hart_trap(vm.hart[0]);
+            continue;
+        }
+
+        vm_error_report(vm.hart[0]);
         return 2;
     }
 
