@@ -352,10 +352,10 @@ void vm_set_exception(hart_t *vm, uint32_t cause, uint32_t val)
 extern int flag;
 void hart_trap(hart_t *vm)
 {
-//    if (flag){
-//	    printf ("vmid: %d\n", vm->mhartid);
-//	    printf ("Software Interrupt: %d\n", vm->sip & RV_INT_SSI_BIT);
-//    }
+    //    if (flag){
+    //	    printf ("vmid: %d\n", vm->mhartid);
+    //	    printf ("Software Interrupt: %d\n", vm->sip & RV_INT_SSI_BIT);
+    //    }
     /* Fill exception fields */
     vm->scause = vm->exc_cause;
     vm->stval = vm->exc_val;
@@ -793,9 +793,9 @@ void vm_init(hart_t *vm)
 void vm_step(hart_t *vm)
 {
     if (vm->hsm_status != SBI_HSM_STATE_STARTED)
-	return;
+        return;
     if (vm->mhartid == 1)
-    	printf("hartid: %d, state: %d\n", vm->mhartid, vm->hsm_status);
+        printf("hartid: %d, state: %d\n", vm->mhartid, vm->hsm_status);
     if (unlikely(vm->error))
         return;
 
