@@ -787,6 +787,9 @@ void vm_init(hart_t *vm)
 
 void vm_step(hart_t *vm)
 {
+    if (vm->hsm_status != SBI_HSM_STATE_STARTED)
+	return;
+
     if (unlikely(vm->error))
         return;
 
