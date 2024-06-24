@@ -17,7 +17,7 @@
 /* Define fetch separately since it is simpler (fixed width, already checked
  * alignment, only main RAM is executable).
  */
-static void mem_fetch(vm_t *vm, uint32_t n_pages, uint32_t **page_addr)
+static void mem_fetch(hart_t *vm, uint32_t n_pages, uint32_t **page_addr)
 {
     emu_state_t *data = PRIV(vm);
     if (unlikely(n_pages >= RAM_SIZE / RV_PAGE_SIZE)) {
@@ -29,7 +29,7 @@ static void mem_fetch(vm_t *vm, uint32_t n_pages, uint32_t **page_addr)
 }
 
 /* Similarly, only main memory pages can be used as page tables. */
-static uint32_t *mem_page_table(const vm_t *vm, uint32_t ppn)
+static uint32_t *mem_page_table(const hart_t *vm, uint32_t ppn)
 {
     emu_state_t *data = PRIV(vm);
     if (ppn < (RAM_SIZE / RV_PAGE_SIZE))
@@ -37,7 +37,7 @@ static uint32_t *mem_page_table(const vm_t *vm, uint32_t ppn)
     return NULL;
 }
 
-static void emu_update_uart_interrupts(vm_t *vm)
+static void emu_update_uart_interrupts(hart_t *vm)
 {
     emu_state_t *data = PRIV(vm);
     u8250_update_interrupts(&data->uart);
@@ -49,7 +49,7 @@ static void emu_update_uart_interrupts(vm_t *vm)
 }
 
 #if SEMU_HAS(VIRTIONET)
-static void emu_update_vnet_interrupts(vm_t *vm)
+static void emu_update_vnet_interrupts(hart_t *vm)
 {
     emu_state_t *data = PRIV(vm);
     if (data->vnet.InterruptStatus)
@@ -61,7 +61,7 @@ static void emu_update_vnet_interrupts(vm_t *vm)
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
-static void emu_update_vblk_interrupts(vm_t *vm)
+static void emu_update_vblk_interrupts(hart_t *vm)
 {
     emu_state_t *data = PRIV(vm);
     if (data->vblk.InterruptStatus)
@@ -72,14 +72,14 @@ static void emu_update_vblk_interrupts(vm_t *vm)
 }
 #endif
 
-static void emu_update_timer_interrupt(vm_t *vm)
+static void emu_update_timer_interrupt(hart_t *vm)
 {
     emu_state_t *data = PRIV(vm);
     data->clint.mtime++;
     clint_update_interrupts(vm, &data->clint);
     /* TODO: */
 }
-static void mem_load(vm_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
+static void mem_load(hart_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
 {
     emu_state_t *data = PRIV(vm);
     /* RAM at 0x00000000 + RAM_SIZE */
@@ -121,7 +121,7 @@ static void mem_load(vm_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
     vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
 }
 
-static void mem_store(vm_t *vm, uint32_t addr, uint8_t width, uint32_t value)
+static void mem_store(hart_t *vm, uint32_t addr, uint8_t width, uint32_t value)
 {
     emu_state_t *data = PRIV(vm);
     /* RAM at 0x00000000 + RAM_SIZE */
@@ -173,7 +173,7 @@ typedef struct {
     int32_t value;
 } sbi_ret_t;
 
-static inline sbi_ret_t handle_sbi_ecall_TIMER(vm_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *vm, int32_t fid)
 {
     emu_state_t *data = PRIV(vm);
     switch (fid) {
@@ -190,7 +190,7 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(vm_t *vm, int32_t fid)
     }
 }
 
-static inline sbi_ret_t handle_sbi_ecall_RST(vm_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_RST(hart_t *vm, int32_t fid)
 {
     emu_state_t *data = PRIV(vm);
     switch (fid) {
@@ -204,7 +204,7 @@ static inline sbi_ret_t handle_sbi_ecall_RST(vm_t *vm, int32_t fid)
     }
 }
 
-//static inline sbi_ret_t handle_sbi_ecall_HSM(vm_t *vm, int32_f fid)
+//static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *vm, int32_f fid)
 //{
 //	/* TODO */
 //}
@@ -213,7 +213,7 @@ static inline sbi_ret_t handle_sbi_ecall_RST(vm_t *vm, int32_t fid)
 #define RV_MARCHID ((1ULL << 31) | 1)
 #define RV_MIMPID 1
 
-static inline sbi_ret_t handle_sbi_ecall_BASE(vm_t *vm, int32_t fid)
+static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *vm, int32_t fid)
 {
     switch (fid) {
     case SBI_BASE__GET_SBI_IMPL_ID:
@@ -241,7 +241,7 @@ static inline sbi_ret_t handle_sbi_ecall_BASE(vm_t *vm, int32_t fid)
 
 #define SBI_HANDLE(TYPE) ret = handle_sbi_ecall_##TYPE(vm, vm->x_regs[RV_R_A6])
 
-static void handle_sbi_ecall(vm_t *vm)
+static void handle_sbi_ecall(hart_t *vm)
 {
     sbi_ret_t ret;
     switch (vm->x_regs[RV_R_A7]) {
@@ -390,7 +390,7 @@ static int semu_start(int argc, char **argv)
     emu_state_t emu;
     memset(&emu, 0, sizeof(emu));
 
-    vm_t vm = {
+    hart_t vm = {
         .priv = &emu,
         .mem_fetch = mem_fetch,
         .mem_load = mem_load,
@@ -493,7 +493,7 @@ static int semu_start(int argc, char **argv)
         }
 
         if (vm.error == ERR_EXCEPTION) {
-            vm_trap(&vm);
+            hart_trap(&vm);
             continue;
         }
 
