@@ -434,21 +434,6 @@ static inline void set_dest(hart_t *vm, uint32_t insn, uint32_t x)
 
 static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
 {
-    if ((addr >> 8) == 0xC) {
-        uint16_t idx = addr & MASK(7);
-        if (idx >= 0x20 || !(vm->s_mode || ((vm->scounteren >> idx) & 1)))
-            vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
-        else {
-            /* Use the instruction counter for all of the counters.
-             * Ideally, reads should return the value before the increment,
-             * and writes should set the value after the increment. However,
-             * we do not expose any way to write the counters.
-             */
-            *value = vm->insn_count >> ((addr & (1 << 7)) ? 32 : 0);
-        }
-        return;
-    }
-
     if (!vm->s_mode) {
         vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
         return;
@@ -491,6 +476,18 @@ static void csr_read(hart_t *vm, uint16_t addr, uint32_t *value)
         break;
     case RV_CSR_STVAL:
         *value = vm->stval;
+        break;
+    case RV_CSR_TIME:
+        *value = vm->time;
+        break;
+    case RV_CSR_TIMEH:
+        *value = vm->time >> 32;
+        break;
+    case RV_CSR_INSTRET:
+        *value = vm->instret;
+        break;
+    case RV_CSR_INSTRETH:
+        *value = vm->instret >> 32;
         break;
     default:
         vm_set_exception(vm, RV_EXC_ILLEGAL_INSN, 0);
@@ -794,8 +791,7 @@ void vm_step(hart_t *vm)
 {
     if (vm->hsm_status != SBI_HSM_STATE_STARTED)
         return;
-    if (vm->mhartid == 1)
-        printf("hartid: %d, state: %d\n", vm->mhartid, vm->hsm_status);
+
     if (unlikely(vm->error))
         return;
 
@@ -815,7 +811,7 @@ void vm_step(hart_t *vm)
 
     vm->pc += 4;
     /* Assume no integer overflow */
-    vm->insn_count++;
+    vm->instret++;
 
     uint32_t insn_opcode = insn & MASK(7), value;
     switch (insn_opcode) {

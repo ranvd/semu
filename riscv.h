@@ -69,7 +69,8 @@ struct __hart_internal {
      * utilized in these capacities and should not be modified between logical
      * resets.
      */
-    uint64_t insn_count;
+    uint64_t instret;
+    uint64_t time;
 
     /* Instruction execution state must be set to "NONE" for instruction
      * execution to continue. If the state is not "NONE," the vm_step()

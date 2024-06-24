@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -224,6 +225,7 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
         vm->hart[hartid]->x_regs[RV_R_A0] = hartid;
         vm->hart[hartid]->x_regs[RV_R_A1] = opaque;
         vm->hart[hartid]->pc = start_addr;
+        vm->hart[hartid]->s_mode = true;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     case SBI_HSM__HART_STOP:
         hart->hsm_status = SBI_HSM_STATE_STOPPED;
@@ -251,8 +253,6 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
     return (sbi_ret_t){SBI_ERR_FAILED, 0};
 }
 
-int flag = 0;
-
 static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
 {
     emu_state_t *data = PRIV(hart);
@@ -261,14 +261,9 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
     case SBI_IPI__SEND_IPI:
         hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
         hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
-        printf("IPI from: %d\n", hart->mhartid);
-        printf("a0: %d, a1: %d, a2: %d, a3: %d\n", hart->x_regs[RV_R_A0],
-               hart->x_regs[RV_R_A1], hart->x_regs[RV_R_A2],
-               hart->x_regs[RV_R_A3]);
-        flag = 1;
         if (hart_mask_base == 0xFFFFFFFFFFFFFFFF) {
             for (int i = 0; i < 2; i++) {
-                data->clint.msip[hart->mhartid] = 1;
+                data->clint.msip[i] = 1;
             }
         } else {
             for (int i = hart_mask_base; hart_mask; hart_mask >>= 1, i++) {
@@ -479,7 +474,7 @@ static int semu_start(int argc, char **argv)
     vm_init(&hart0);
 
     hart_t hart1 = {.priv = &emu,
-                    .mhartid = 0,
+                    .mhartid = 1,
                     .mem_fetch = mem_fetch,
                     .mem_load = mem_load,
                     .mem_store = mem_store,
