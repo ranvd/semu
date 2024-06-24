@@ -574,27 +574,27 @@ static int semu_start(int argc, char **argv)
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
-        if (peripheral_update_ctr-- == 0) {
-            peripheral_update_ctr = 64;
+        emu.clint.mtime++;
+        for (int i = 0; i < 2; i++) {
+            if (peripheral_update_ctr-- == 0) {
+                peripheral_update_ctr = 64;
 
-            u8250_check_ready(&emu.uart);
-            if (emu.uart.in_ready)
-                emu_update_uart_interrupts(vm.hart[0]);
+                u8250_check_ready(&emu.uart);
+                // if (emu.uart.in_ready)
+                    emu_update_uart_interrupts(vm.hart[i]);
 
 #if SEMU_HAS(VIRTIONET)
-            virtio_net_refresh_queue(&emu.vnet);
-            if (emu.vnet.InterruptStatus)
-                emu_update_vnet_interrupts(vm.hart[0]);
+                virtio_net_refresh_queue(&emu.vnet);
+                if (emu.vnet.InterruptStatus)
+                    emu_update_vnet_interrupts(vm.hart[i]);
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
-            if (emu.vblk.InterruptStatus)
-                emu_update_vblk_interrupts(vm.hart[0]);
+                if (emu.vblk.InterruptStatus)
+                    emu_update_vblk_interrupts(vm.hart[i]);
 #endif
-        }
+            }
 
-        emu.clint.mtime++;
-        for (int i = 0; i < 2; i++) {
             emu_update_timer_interrupt(vm.hart[i]);
 
             vm_step(vm.hart[i]);
