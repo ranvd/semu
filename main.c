@@ -118,7 +118,6 @@ static void mem_load(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
-            printf("CLINT READ\n");
             clint_read(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
             return;
@@ -164,7 +163,6 @@ static void mem_store(hart_t *hart,
             return;
 #endif
         case 0x43: /* clint */
-            printf("CLINT WRITE\n");
             clint_write(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
             return;
@@ -193,7 +191,6 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
         hart->sip &= ~RV_INT_STI_BIT;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
-        printf("ERRRRRRRRRRRRRRRRRRRRRR\n");
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
 }
@@ -264,7 +261,7 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
         hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
         hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
         if (hart_mask_base == 0xFFFFFFFFFFFFFFFF) {
-            for (int i = 0; i < hart->vm->hart_number; i++) {
+            for (uint32_t i = 0; i < hart->vm->hart_number; i++) {
                 data->clint.msip[i] = 1;
             }
         } else {
@@ -307,7 +304,6 @@ static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
     case 7:
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
-        printf("RFENCE DEFAULT\n");
         return (sbi_ret_t){SBI_ERR_FAILED, 0};
     }
 }

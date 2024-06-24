@@ -9,7 +9,7 @@ OBJS_EXTRA :=
 OPTS :=
 
 # virtio-blk
-ENABLE_VIRTIOBLK ?= 0
+ENABLE_VIRTIOBLK ?= 1
 $(call set-feature, VIRTIOBLK)
 DISKIMG_FILE :=
 MKFS_EXT4 ?= mkfs.ext4
@@ -27,7 +27,7 @@ ifeq ($(call has, VIRTIOBLK), 1)
 endif
 
 # virtio-net
-ENABLE_VIRTIONET ?= 0
+ENABLE_VIRTIONET ?= 1
 ifneq ($(UNAME_S),Linux)
     ENABLE_VIRTIONET := 0
 endif
