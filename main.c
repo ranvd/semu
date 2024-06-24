@@ -187,6 +187,12 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
             (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
             (uint64_t) (hart->x_regs[RV_R_A0]);
 
+        if (hart->mhartid == 1) {
+            int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
+            dprintf(fd, "mtime: %ld, mtimecmp: %ld\n", data->clint.mtime,
+                    data->clint.mtimecmp[hart->mhartid]);
+            close(fd);
+        }
         hart->sip &= ~RV_INT_STI_BIT;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
@@ -259,6 +265,7 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
     case SBI_IPI__SEND_IPI:
         hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
         hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
+        printf("IPI from %d, mask %x, base %x\n", hart->mhartid, hart_mask, hart_mask_base);
         if (hart_mask_base == 0xFFFFFFFFFFFFFFFF) {
             for (int i = 0; i < 2; i++) {
                 data->clint.msip[i] = 1;
