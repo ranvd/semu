@@ -178,10 +178,8 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
     emu_state_t *data = PRIV(hart);
     switch (fid) {
     case SBI_TIMER__SET_TIMER:
-        data->clint.mtimecmp[0] = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
+        data->clint.mtimecmp[hart->mhartid] = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
                       (uint64_t) (hart->x_regs[RV_R_A0]);
-	//data->timer = (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
-         //             (uint64_t) (hart->x_regs[RV_R_A0]);
 
 	//hart->sip &= ~RV_INT_STI;
         return (sbi_ret_t){SBI_SUCCESS, 0};
@@ -220,7 +218,7 @@ static inline sbi_ret_t handle_sbi_ecall_HSM(hart_t *hart, int32_t fid)
 	vm->hart[hartid]->satp = 0;
 	vm->hart[hartid]->sstatus_sie = 0;
 	vm->hart[hartid]->x_regs[RV_R_A0] = hartid;
-	vm->hart[hartid]->x_regs[RV_R_A0] = opaque;
+	vm->hart[hartid]->x_regs[RV_R_A1] = opaque;
 	vm->hart[hartid]->pc = start_addr;
 	return (sbi_ret_t){SBI_SUCCESS, 0};
     case SBI_HSM__HART_STOP:
@@ -444,6 +442,17 @@ static int semu_start(int argc, char **argv)
 	.hsm_status = SBI_HSM_STATE_STARTED
     };
     vm_init(&hart0);
+ 
+    hart_t hart1 = {
+        .priv = &emu,
+	.mhartid = 0,
+        .mem_fetch = mem_fetch,
+        .mem_load = mem_load,
+        .mem_store = mem_store,
+        .mem_page_table = mem_page_table,
+	.hsm_status = SBI_HSM_STATE_STOPPED
+    };
+    vm_init(&hart1);  
 
     /* Set up RAM */
     emu.ram = mmap(NULL, RAM_SIZE, PROT_READ | PROT_WRITE,
@@ -481,12 +490,17 @@ static int semu_start(int argc, char **argv)
 
     /* Set up RISC-V hart */
     emu.clint.mtimecmp[0] = 0xFFFFFFFFFFFFFFFF;
+    emu.clint.mtimecmp[1] = 0xFFFFFFFFFFFFFFFF;
     emu.clint.mtime = 0;
     //emu.timer = 0xFFFFFFFFFFFFFFFF;
     hart0.s_mode = true;
     hart0.x_regs[RV_R_A0] = 0; /* hart ID. i.e., cpuid */
     hart0.x_regs[RV_R_A1] = dtb_addr;
-
+   
+    hart1.s_mode = true;
+    hart1.x_regs[RV_R_A0] = 1; /* hart ID. i.e., cpuid */
+    hart1.x_regs[RV_R_A1] = dtb_addr;
+    
     /* Set up peripherals */
     emu.uart.in_fd = 0, emu.uart.out_fd = 1;
     capture_keyboard_input(); /* set up uart */
@@ -501,10 +515,12 @@ static int semu_start(int argc, char **argv)
 #endif
 
     vm_t vm;
-    vm.hart_number = 1;
+    vm.hart_number = 2;
     vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
     vm.hart[0] = &hart0;
     vm.hart[0]->vm = &vm;
+    vm.hart[1] = &hart1;
+    vm.hart[1]->vm = &vm;
 
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
@@ -528,29 +544,32 @@ static int semu_start(int argc, char **argv)
 #endif
         }
 
-	emu_update_timer_interrupt(vm.hart[0]);
+	for (int i = 0; i < 2; i++){
+	
+	    emu_update_timer_interrupt(vm.hart[i]);
 
         //if (vm.insn_count > emu.timer)
          //   vm.sip |= RV_INT_STI_BIT;
         //else
         //    vm.sip &= ~RV_INT_STI_BIT;
 
-        vm_step(vm.hart[0]);
-        if (likely(!vm.hart[0]->error))
-            continue;
+            vm_step(vm.hart[i]);
+            if (likely(!vm.hart[i]->error))
+                continue;
 
-        if (vm.hart[0]->error == ERR_EXCEPTION && vm.hart[0]->exc_cause == RV_EXC_ECALL_S) {
-            handle_sbi_ecall(vm.hart[0]);
-            continue;
-        }
+            if (vm.hart[i]->error == ERR_EXCEPTION && vm.hart[i]->exc_cause == RV_EXC_ECALL_S) {
+                handle_sbi_ecall(vm.hart[i]);
+                continue;
+            }
 
-        if (vm.hart[0]->error == ERR_EXCEPTION) {
-            hart_trap(vm.hart[0]);
-            continue;
-        }
+            if (vm.hart[i]->error == ERR_EXCEPTION) {
+                hart_trap(vm.hart[i]);
+                continue;
+            }
 
-        vm_error_report(vm.hart[0]);
-        return 2;
+            vm_error_report(vm.hart[i]);
+            return 2;
+	}
     }
 
     /* unreachable */
