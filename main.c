@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,38 +39,38 @@ static uint32_t *mem_page_table(const hart_t *hart, uint32_t ppn)
     return NULL;
 }
 
-static void emu_update_uart_interrupts(hart_t *hart)
+static void emu_update_uart_interrupts(vm_t *vm)
 {
-    emu_state_t *data = PRIV(hart);
+    emu_state_t *data = PRIV(vm->hart[0]);
     u8250_update_interrupts(&data->uart);
     if (data->uart.pending_ints)
         data->plic.active |= IRQ_UART_BIT;
     else
         data->plic.active &= ~IRQ_UART_BIT;
-    plic_update_interrupts(hart, &data->plic);
+    plic_update_interrupts(vm, &data->plic);
 }
 
 #if SEMU_HAS(VIRTIONET)
-static void emu_update_vnet_interrupts(hart_t *hart)
+static void emu_update_vnet_interrupts(vm_t *vm)
 {
-    emu_state_t *data = PRIV(hart);
+    emu_state_t *data = PRIV(vm->hart[0]);
     if (data->vnet.InterruptStatus)
         data->plic.active |= IRQ_VNET_BIT;
     else
         data->plic.active &= ~IRQ_VNET_BIT;
-    plic_update_interrupts(hart, &data->plic);
+    plic_update_interrupts(vm, &data->plic);
 }
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
-static void emu_update_vblk_interrupts(hart_t *hart)
+static void emu_update_vblk_interrupts(vm_t *vm)
 {
-    emu_state_t *data = PRIV(hart);
+    emu_state_t *data = PRIV(vm->hart[0]);
     if (data->vblk.InterruptStatus)
         data->plic.active |= IRQ_VBLK_BIT;
     else
         data->plic.active &= ~IRQ_VBLK_BIT;
-    plic_update_interrupts(hart, &data->plic);
+    plic_update_interrupts(vm, &data->plic);
 }
 #endif
 
@@ -98,28 +99,29 @@ static void mem_load(hart_t *hart,
         case 0x0:
         case 0x2: /* PLIC (0 - 0x3F) */
             plic_read(hart, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(hart, &data->plic);
+            plic_update_interrupts(hart->vm, &data->plic);
             return;
         case 0x40: /* UART */
             u8250_read(hart, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(hart);
+            emu_update_uart_interrupts(hart->vm);
             return;
 #if SEMU_HAS(VIRTIONET)
         case 0x41: /* virtio-net */
             virtio_net_read(hart, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(hart);
+            emu_update_vnet_interrupts(hart->vm);
             return;
 #endif
 #if SEMU_HAS(VIRTIOBLK)
         case 0x42: /* virtio-blk */
             virtio_blk_read(hart, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(hart);
+            emu_update_vblk_interrupts(hart->vm);
             return;
 #endif
         case 0x43: /* clint */
-	    printf("CLINT WRITE\n");
+            printf("CLINT READ\n");
             clint_read(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
+            return;
         }
     }
     vm_set_exception(hart, RV_EXC_LOAD_FAULT, hart->exc_val);
@@ -143,26 +145,26 @@ static void mem_store(hart_t *hart,
         case 0x0:
         case 0x2: /* PLIC (0 - 0x3F) */
             plic_write(hart, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(hart, &data->plic);
+            plic_update_interrupts(hart->vm, &data->plic);
             return;
         case 0x40: /* UART */
             u8250_write(hart, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(hart);
+            emu_update_uart_interrupts(hart->vm);
             return;
 #if SEMU_HAS(VIRTIONET)
         case 0x41: /* virtio-net */
             virtio_net_write(hart, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(hart);
+            emu_update_vnet_interrupts(hart->vm);
             return;
 #endif
 #if SEMU_HAS(VIRTIOBLK)
         case 0x42: /* virtio-blk */
             virtio_blk_write(hart, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(hart);
+            emu_update_vblk_interrupts(hart->vm);
             return;
 #endif
         case 0x43: /* clint */
-	    printf("CLINT READ\n");
+            printf("CLINT WRITE\n");
             clint_write(hart, &data->clint, addr & 0xFFFFF, width, value);
             clint_update_interrupts(hart, &data->clint);
             return;
@@ -188,17 +190,10 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
         data->clint.mtimecmp[hart->mhartid] =
             (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
             (uint64_t) (hart->x_regs[RV_R_A0]);
-
-//        if (hart->mhartid == 1) {
-//            int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
-//            dprintf(fd, "mtime: %ld, mtimecmp: %ld\n", data->clint.mtime,
-//                    data->clint.mtimecmp[hart->mhartid]);
-//            close(fd);
-//        }
         hart->sip &= ~RV_INT_STI_BIT;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
-	printf("ERRRRRRRRRRRRRRRRRRRRRR\n");
+        printf("ERRRRRRRRRRRRRRRRRRRRRR\n");
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
 }
@@ -290,20 +285,20 @@ static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
     uint64_t hart_mask, hart_mask_base;
     switch (fid) {
     case 0:
-	return (sbi_ret_t) {SBI_SUCCESS, 0};
-    case 1:    
+        return (sbi_ret_t){SBI_SUCCESS, 0};
+    case 1:
         hart_mask = (uint64_t) hart->x_regs[RV_R_A0];
         hart_mask_base = (uint64_t) hart->x_regs[RV_R_A1];
-	if (hart_mask_base == 0xFFFFFFFFFFFFFFFF){
-	    for (int i = 0; i < hart->vm->hart_number; i++) {
-		hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
-	    }
-	} else {
-	    for (int i = hart_mask_base; hart_mask; hart_mask >>= 1, i++){
-		hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
-	    }
-	}
-	return (sbi_ret_t) {SBI_SUCCESS, 0};
+        if (hart_mask_base == 0xFFFFFFFFFFFFFFFF) {
+            for (uint32_t i = 0; i < hart->vm->hart_number; i++) {
+                hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
+            }
+        } else {
+            for (int i = hart_mask_base; hart_mask; hart_mask >>= 1, i++) {
+                hart->vm->hart[i]->cache_fetch.n_pages = 0xFFFFFFFF;
+            }
+        }
+        return (sbi_ret_t){SBI_SUCCESS, 0};
     case 2:
     case 3:
     case 4:
@@ -312,7 +307,7 @@ static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
     case 7:
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
-	printf("RFENCE DEFAULT\n");
+        printf("RFENCE DEFAULT\n");
         return (sbi_ret_t){SBI_ERR_FAILED, 0};
     }
 }
@@ -549,7 +544,7 @@ static int semu_start(int argc, char **argv)
     vm_t vm;
     vm.hart_number = 4;
     vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
-    for (int i = 0; i < 4; i++) {
+    for (uint32_t i = 0; i < vm.hart_number; i++) {
         hart_t *newhart = malloc(sizeof(hart_t));
         newhart->priv = &emu;
         newhart->mhartid = i;
@@ -584,38 +579,26 @@ static int semu_start(int argc, char **argv)
 
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
-    int cccc = 0;
     while (!emu.stopped) {
         emu.clint.mtime++;
-	
-	/* Loging interrupt status */
-	if (cccc-- == 0){
-	cccc = 2000;
-	int fd = open("semu.log", O_RDWR | O_APPEND | O_CREAT, S_IRWXU);
-	dprintf(fd, "hart ,interrupt ,enable    ,status\n");
-	for (int i = 0; i < 4; i++){
-	    dprintf(fd, "%-4d,%-10x,%-10x,%d, %x, %x\n", i, vm.hart[i]->sip, vm.hart[i]->sie, vm.hart[i]->hsm_status, emu.clint.mtimecmp[i], vm.hart[i]->time);
-	}
-        close(fd);
-	}
- 
-        for (int i = 0; i < 4; i++) {
+
+        for (uint32_t i = 0; i < vm.hart_number; i++) {
             if (peripheral_update_ctr-- == 0) {
                 peripheral_update_ctr = 64;
 
                 u8250_check_ready(&emu.uart);
-                // if (emu.uart.in_ready)
-                emu_update_uart_interrupts(vm.hart[i]);
+                if (emu.uart.in_ready)
+                    emu_update_uart_interrupts(&vm);
 
 #if SEMU_HAS(VIRTIONET)
                 virtio_net_refresh_queue(&emu.vnet);
                 if (emu.vnet.InterruptStatus)
-                    emu_update_vnet_interrupts(vm.hart[i]);
+                    emu_update_vnet_interrupts(&vm);
 #endif
 
 #if SEMU_HAS(VIRTIOBLK)
                 if (emu.vblk.InterruptStatus)
-                    emu_update_vblk_interrupts(vm.hart[i]);
+                    emu_update_vblk_interrupts(&vm);
 #endif
             }
 

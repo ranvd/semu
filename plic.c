@@ -1,19 +1,23 @@
+#include <stdint.h>
 #include "device.h"
 #include "riscv.h"
 #include "riscv_private.h"
 
 /* Make PLIC as simple as possible: 32 interrupts, no priority */
 
-void plic_update_interrupts(hart_t *vm, plic_state_t *plic)
+void plic_update_interrupts(vm_t *vm, plic_state_t *plic)
 {
     /* Update pending interrupts */
     plic->ip |= plic->active & ~plic->masked;
     plic->masked |= plic->active;
     /* Send interrupt to target */
-    if (plic->ip & plic->ie[vm->mhartid])
-        vm->sip |= RV_INT_SEI_BIT;
+    for (uint32_t i = 0; i < vm->hart_number; i++){
+
+    if (plic->ip & plic->ie[i])
+        vm->hart[i]->sip |= RV_INT_SEI_BIT;
     else
-        vm->sip &= ~RV_INT_SEI_BIT;
+        vm->hart[i]->sip &= ~RV_INT_SEI_BIT;
+    }
 }
 
 static bool plic_reg_read(plic_state_t *plic, uint32_t addr, uint32_t *value)

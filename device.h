@@ -31,7 +31,7 @@ typedef struct {
     uint32_t active;
 } plic_state_t;
 
-void plic_update_interrupts(hart_t *core, plic_state_t *plic);
+void plic_update_interrupts(vm_t *vm, plic_state_t *plic);
 void plic_read(hart_t *core,
                plic_state_t *plic,
                uint32_t addr,
