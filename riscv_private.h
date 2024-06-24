@@ -39,6 +39,14 @@ enum {
     RV_R_A7 = 17,
 };
 
+/* unprivileged ISA: CSRs */
+enum {
+    RV_CSR_TIME = 0xC01,
+    RV_CSR_INSTRET = 0xC02,
+    RV_CSR_TIMEH = 0xC81,
+    RV_CSR_INSTRETH = 0xC82,
+};
+
 /* privileged ISA: CSRs */
 enum {
     /* S-mode (Supervisor Trap Setup) */
