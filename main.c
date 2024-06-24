@@ -278,6 +278,24 @@ static inline sbi_ret_t handle_sbi_ecall_IPI(hart_t *hart, int32_t fid)
     }
 }
 
+static inline sbi_ret_t handle_sbi_ecall_RFENCE(hart_t *hart, int32_t fid)
+{
+    switch (fid) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+        return (sbi_ret_t){SBI_SUCCESS, 0};
+        break;
+    default:
+        return (sbi_ret_t){SBI_ERR_FAILED, 0};
+    }
+}
+
 #define RV_MVENDORID 0x12345678
 #define RV_MARCHID ((1ULL << 31) | 1)
 #define RV_MIMPID 1
@@ -296,12 +314,12 @@ static inline sbi_ret_t handle_sbi_ecall_BASE(hart_t *hart, int32_t fid)
     case SBI_BASE__GET_MIMPID:
         return (sbi_ret_t){SBI_SUCCESS, RV_MIMPID};
     case SBI_BASE__GET_SBI_SPEC_VERSION:
-        return (sbi_ret_t){SBI_SUCCESS, (0 << 24) | 3}; /* version 0.3 */
+        return (sbi_ret_t){SBI_SUCCESS, (2 << 24) | 0}; /* version 2.0 */
     case SBI_BASE__PROBE_EXTENSION: {
         int32_t eid = (int32_t) hart->x_regs[RV_R_A0];
         bool available = eid == SBI_EID_BASE || eid == SBI_EID_TIMER ||
                          eid == SBI_EID_RST || eid == SBI_EID_HSM ||
-                         eid == SBI_EID_IPI;
+                         eid == SBI_EID_IPI || eid == SBI_EID_RFENCE;
         return (sbi_ret_t){SBI_SUCCESS, available};
     }
     default:
@@ -330,6 +348,9 @@ static void handle_sbi_ecall(hart_t *hart)
         break;
     case SBI_EID_IPI:
         SBI_HANDLE(IPI);
+        break;
+    case SBI_EID_RFENCE:
+        SBI_HANDLE(RFENCE);
         break;
     default:
         ret = (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
