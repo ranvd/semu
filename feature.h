@@ -4,12 +4,12 @@
 
 /* virtio-blk */
 #ifndef SEMU_FEATUREVIRTIOBLK
-#define SEMU_FEATUREVIRTIOBLK 1
+#define SEMU_FEATUREVIRTIOBLK 0
 #endif
 
 /* virtio-net */
 #ifndef SEMU_FEATUREVIRTIONET
-#define SEMU_FEATUREVIRTIONET 1
+#define SEMU_FEATUREVIRTIONET 0
 #endif
 
 /* Feature test macro */

@@ -34,13 +34,41 @@
             };
         };
         cpu1: cpu@1 {
-	    status = "okay";
+	        status = "okay";
             device_type = "cpu";
             compatible = "riscv";
             reg = <1>;
             riscv,isa = "rv32ima";
             mmu-type = "riscv,rv32";
             cpu1_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                #address-cells = <0>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+        cpu2: cpu@2 {
+	        status = "okay";
+            device_type = "cpu";
+            compatible = "riscv";
+            reg = <2>;
+            riscv,isa = "rv32ima";
+            mmu-type = "riscv,rv32";
+            cpu2_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                #address-cells = <0>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+        cpu3: cpu@3 {
+	        status = "okay";
+            device_type = "cpu";
+            compatible = "riscv";
+            reg = <3>;
+            riscv,isa = "rv32ima";
+            mmu-type = "riscv,rv32";
+            cpu3_intc: interrupt-controller {
                 #interrupt-cells = <1>;
                 #address-cells = <0>;
                 interrupt-controller;

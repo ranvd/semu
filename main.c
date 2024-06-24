@@ -483,24 +483,6 @@ static int semu_start(int argc, char **argv)
     emu_state_t emu;
     memset(&emu, 0, sizeof(emu));
 
-    hart_t hart0 = {.priv = &emu,
-                    .mhartid = 0,
-                    .mem_fetch = mem_fetch,
-                    .mem_load = mem_load,
-                    .mem_store = mem_store,
-                    .mem_page_table = mem_page_table,
-                    .hsm_status = SBI_HSM_STATE_STARTED};
-    vm_init(&hart0);
-
-    hart_t hart1 = {.priv = &emu,
-                    .mhartid = 1,
-                    .mem_fetch = mem_fetch,
-                    .mem_load = mem_load,
-                    .mem_store = mem_store,
-                    .mem_page_table = mem_page_table,
-                    .hsm_status = SBI_HSM_STATE_STOPPED};
-    vm_init(&hart1);
-
     /* Set up RAM */
     emu.ram = mmap(NULL, RAM_SIZE, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -540,13 +522,29 @@ static int semu_start(int argc, char **argv)
     emu.clint.mtimecmp[1] = 0xFFFFFFFFFFFFFFFF;
     emu.clint.mtime = 0;
     // emu.timer = 0xFFFFFFFFFFFFFFFF;
-    hart0.s_mode = true;
-    hart0.x_regs[RV_R_A0] = 0; /* hart ID. i.e., cpuid */
-    hart0.x_regs[RV_R_A1] = dtb_addr;
 
-    hart1.s_mode = true;
-    hart1.x_regs[RV_R_A0] = 1; /* hart ID. i.e., cpuid */
-    hart1.x_regs[RV_R_A1] = dtb_addr;
+    vm_t vm;
+    vm.hart_number = 4;
+    vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
+    for (int i = 0; i < 4; i++) {
+        hart_t *newhart = malloc(sizeof(hart_t));
+        newhart->priv = &emu;
+        newhart->mhartid = i;
+        newhart->mem_fetch = mem_fetch;
+        newhart->mem_load = mem_load;
+        newhart->mem_store = mem_store;
+        newhart->mem_page_table = mem_page_table;
+        vm_init(newhart);
+        newhart->s_mode = true;
+        newhart->x_regs[RV_R_A0] = i;
+        newhart->x_regs[RV_R_A1] = dtb_addr;
+        if (i == 0)
+            newhart->hsm_status = SBI_HSM_STATE_STARTED;
+        else
+            newhart->hsm_status = SBI_HSM_STATE_STOPPED;
+        newhart->vm = &vm;
+        vm.hart[i] = newhart;
+    }
 
     /* Set up peripherals */
     emu.uart.in_fd = 0, emu.uart.out_fd = 1;
@@ -561,25 +559,17 @@ static int semu_start(int argc, char **argv)
     emu.disk = virtio_blk_init(&(emu.vblk), disk_file);
 #endif
 
-    vm_t vm;
-    vm.hart_number = 2;
-    vm.hart = malloc(sizeof(hart_t *) * vm.hart_number);
-    vm.hart[0] = &hart0;
-    vm.hart[0]->vm = &vm;
-    vm.hart[1] = &hart1;
-    vm.hart[1]->vm = &vm;
-
     /* Emulate */
     uint32_t peripheral_update_ctr = 0;
     while (!emu.stopped) {
         emu.clint.mtime++;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 4; i++) {
             if (peripheral_update_ctr-- == 0) {
                 peripheral_update_ctr = 64;
 
                 u8250_check_ready(&emu.uart);
                 // if (emu.uart.in_ready)
-                    emu_update_uart_interrupts(vm.hart[i]);
+                emu_update_uart_interrupts(vm.hart[i]);
 
 #if SEMU_HAS(VIRTIONET)
                 virtio_net_refresh_queue(&emu.vnet);
