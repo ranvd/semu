@@ -39,7 +39,6 @@ static bool clint_reg_write(clint_state_t *clint, uint32_t addr, uint32_t value)
 {
     if (addr < 0x4000) {
         clint->msip[addr >> 2] = value;
-        printf("Writing msip: %d\n", value);
         return true;
     } else if (addr < 0xBFF8) {
         addr -= 0x4000;

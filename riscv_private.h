@@ -148,11 +148,10 @@ enum {
 #define SBI_IPI__SEND_IPI 0
 
 #define SBI_EID_RFENCE 0x52464E43
-// #define SBI_RFENCE__FENCE_I 0
-// #define SBI_RFENCE__FENCE_VMA 1
-// #define SBI_RFENCE__FENCE_VMA_ASID 2
-// #define SBI_RFENCE__FENCE_ 3
-// #define SBI_RFENCE__FENCE_I 4
-// #define SBI_RFENCE__FENCE_I 5
-// #define SBI_RFENCE__FENCE_I 6
-// #define SBI_RFENCE__FENCE_I 7
+#define SBI_RFENCE__I 0
+#define SBI_RFENCE__VMA 1
+#define SBI_RFENCE__VMA_ASID 2
+#define SBI_RFENCE__GVMA_VMID 3
+#define SBI_RFENCE__GVMA 4
+#define SBI_RFENCE__VVMA_ASID 5
+#define SBI_RFENCE__VVMA 6
