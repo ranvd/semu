@@ -284,8 +284,8 @@ static void mmu_fetch(hart_t *hart, uint32_t addr, uint32_t *value)
 {
     uint32_t vpn = addr >> RV_PAGE_SHIFT;
     if (unlikely(vpn != hart->cache_fetch.n_pages)) {
-        mmu_translate(hart, &addr, (1 << 3), (1 << 6), false, RV_EXC_FETCH_FAULT,
-                      RV_EXC_FETCH_PFAULT);
+        mmu_translate(hart, &addr, (1 << 3), (1 << 6), false,
+                      RV_EXC_FETCH_FAULT, RV_EXC_FETCH_PFAULT);
         if (hart->error)
             return;
         uint32_t *page_addr;
@@ -305,8 +305,8 @@ static void mmu_load(hart_t *hart,
                      bool reserved)
 {
     mmu_translate(hart, &addr, (1 << 1) | (hart->sstatus_mxr ? (1 << 3) : 0),
-                  (1 << 6), hart->sstatus_sum && hart->s_mode, RV_EXC_LOAD_FAULT,
-                  RV_EXC_LOAD_PFAULT);
+                  (1 << 6), hart->sstatus_sum && hart->s_mode,
+                  RV_EXC_LOAD_FAULT, RV_EXC_LOAD_PFAULT);
     if (hart->error)
         return;
     hart->mem_load(hart, addr, width, value);
@@ -412,7 +412,8 @@ static void op_privileged(hart_t *hart, uint32_t insn)
         hart_set_exception(hart, RV_EXC_BREAKPOINT, hart->current_pc);
         break;
     case 0b000000000000: /* PRIV_ECALL */
-        hart_set_exception(hart, hart->s_mode ? RV_EXC_ECALL_S : RV_EXC_ECALL_U, 0);
+        hart_set_exception(hart, hart->s_mode ? RV_EXC_ECALL_S : RV_EXC_ECALL_U,
+                           0);
         break;
     case 0b000100000010: /* PRIV_SRET */
         op_sret(hart);
@@ -559,7 +560,10 @@ static void csr_write(hart_t *hart, uint16_t addr, uint32_t value)
     }
 }
 
-static void op_csr_rw(hart_t *hart, uint32_t insn, uint16_t csr, uint32_t wvalue)
+static void op_csr_rw(hart_t *hart,
+                      uint32_t insn,
+                      uint16_t csr,
+                      uint32_t wvalue)
 {
     if (decode_rd(insn)) {
         uint32_t value;
@@ -726,12 +730,12 @@ static void op_jump_link(hart_t *hart, uint32_t insn, uint32_t addr)
     }
 }
 
-#define AMO_OP(STORED_EXPR)                                   \
-    do {                                                      \
+#define AMO_OP(STORED_EXPR)                                     \
+    do {                                                        \
         value2 = read_rs2(hart, insn);                          \
         mmu_load(hart, addr, RV_MEM_LW, &value, false);         \
         if (hart->error)                                        \
-            return;                                           \
+            return;                                             \
         set_dest(hart, insn, value);                            \
         mmu_store(hart, addr, RV_MEM_SW, (STORED_EXPR), false); \
     } while (0)
@@ -839,9 +843,9 @@ void hart_step(hart_t *hart)
         break;
     case RV32_OP:
         if (!(insn & (1 << 25)))
-            set_dest(
-                hart, insn,
-                op_rv32i(insn, true, read_rs1(hart, insn), read_rs2(hart, insn)));
+            set_dest(hart, insn,
+                     op_rv32i(insn, true, read_rs1(hart, insn),
+                              read_rs2(hart, insn)));
         else
             set_dest(hart, insn,
                      op_mul(insn, read_rs1(hart, insn), read_rs2(hart, insn)));
@@ -863,15 +867,15 @@ void hart_step(hart_t *hart)
             do_jump(hart, decode_b(insn) + hart->current_pc);
         break;
     case RV32_LOAD:
-        mmu_load(hart, read_rs1(hart, insn) + decode_i(insn), decode_func3(insn),
-                 &value, false);
+        mmu_load(hart, read_rs1(hart, insn) + decode_i(insn),
+                 decode_func3(insn), &value, false);
         if (unlikely(hart->error))
             return;
         set_dest(hart, insn, value);
         break;
     case RV32_STORE:
-        mmu_store(hart, read_rs1(hart, insn) + decode_s(insn), decode_func3(insn),
-                  read_rs2(hart, insn), false);
+        mmu_store(hart, read_rs1(hart, insn) + decode_s(insn),
+                  decode_func3(insn), read_rs2(hart, insn), false);
         if (unlikely(hart->error))
             return;
         break;

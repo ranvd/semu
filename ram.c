@@ -2,15 +2,15 @@
 #include "riscv_private.h"
 
 /* RAM handlers (address must be relative, assumes it is within bounds) */
-#define RAM_FUNC(width, code)                             \
-    do {                                                  \
-        if (unlikely((addr & (width - 1)))) {             \
+#define RAM_FUNC(width, code)                                   \
+    do {                                                        \
+        if (unlikely((addr & (width - 1)))) {                   \
             hart_set_exception(hart, exc_cause, hart->exc_val); \
-            break;                                        \
-        }                                                 \
-        UNUSED uint8_t offset = (addr & 0b11) * 8;        \
-        uint32_t *cell = &mem[addr >> 2];                 \
-        code;                                             \
+            break;                                              \
+        }                                                       \
+        UNUSED uint8_t offset = (addr & 0b11) * 8;              \
+        uint32_t *cell = &mem[addr >> 2];                       \
+        code;                                                   \
     } while (0)
 
 void ram_read(hart_t *hart,

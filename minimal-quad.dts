@@ -21,6 +21,7 @@
         #size-cells = <0>;
         timebase-frequency = <65000000>;
         cpu0: cpu@0 {
+            status = "okay";
             device_type = "cpu";
             compatible = "riscv";
             reg = <0>;
@@ -33,6 +34,49 @@
                 compatible = "riscv,cpu-intc";
             };
         };
+        cpu1: cpu@1 {
+	        status = "okay";
+            device_type = "cpu";
+            compatible = "riscv";
+            reg = <1>;
+            riscv,isa = "rv32ima";
+            mmu-type = "riscv,rv32";
+            cpu1_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                #address-cells = <0>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+        cpu2: cpu@2 {
+	        status = "okay";
+            device_type = "cpu";
+            compatible = "riscv";
+            reg = <2>;
+            riscv,isa = "rv32ima";
+            mmu-type = "riscv,rv32";
+            cpu2_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                #address-cells = <0>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+        cpu3: cpu@3 {
+	        status = "okay";
+            device_type = "cpu";
+            compatible = "riscv";
+            reg = <3>;
+            riscv,isa = "rv32ima";
+            mmu-type = "riscv,rv32";
+            cpu3_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                #address-cells = <0>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+
     };
 
     sram: memory@0 {
@@ -54,7 +98,7 @@
             compatible = "sifive,plic-1.0.0";
             reg = <0x0000000 0x4000000>;
             interrupt-controller;
-            interrupts-extended = <&cpu0_intc 9>;
+            interrupts-extended =  <&cpu0_intc 9>, <&cpu1_intc 9>, <&cpu2_intc 9>, <&cpu3_intc 9>;
             riscv,ndev = <31>;
         };
 
@@ -81,5 +125,16 @@
             interrupts = <3>;
         };
 #endif
+        clint0: clint@4300000 {
+            compatible = "riscv,clint0";
+            interrupt-controller;
+            interrupts-extended =
+            <&cpu0_intc 3 &cpu0_intc 7>,
+            <&cpu1_intc 3 &cpu1_intc 7>,
+            <&cpu2_intc 3 &cpu2_intc 7>,
+            <&cpu3_intc 3 &cpu3_intc 7>;
+            reg = <0x4300000 0x10000>;
+        };
     };
+
 };

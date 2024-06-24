@@ -45,9 +45,9 @@ typedef struct {
  * If the execution completes successfully, the "hart->error" field will be set
  * to ERR_NONE. However, if an error occurs during execution, the emulator will
  * halt and the "hart->error" field will provide information about the error. It
- * is important to handle the emulation error before calling "hart_step()" again;
- * otherwise, it will not execute any instructions. The possible errors are
- * described above for reference.
+ * is important to handle the emulation error before calling "hart_step()"
+ * again; otherwise, it will not execute any instructions. The possible errors
+ * are described above for reference.
  */
 typedef struct __hart_internal hart_t;
 typedef struct __vm_internel vm_t;
@@ -115,8 +115,14 @@ struct __hart_internal {
      * access, it reads or writes the specified "value".
      */
     void (*mem_fetch)(hart_t *hart, uint32_t n_pages, uint32_t **page_addr);
-    void (*mem_load)(hart_t *hart, uint32_t addr, uint8_t width, uint32_t *value);
-    void (*mem_store)(hart_t *hart, uint32_t addr, uint8_t width, uint32_t value);
+    void (*mem_load)(hart_t *hart,
+                     uint32_t addr,
+                     uint8_t width,
+                     uint32_t *value);
+    void (*mem_store)(hart_t *hart,
+                      uint32_t addr,
+                      uint8_t width,
+                      uint32_t value);
 
     /* Pre-validate whether the required page number can accommodate a page
      * table. If it is not a valid page, it returns NULL. The function returns

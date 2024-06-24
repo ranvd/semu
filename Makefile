@@ -74,6 +74,12 @@ minimal.dtb: minimal.dts
 	    $(subst ^,$S,$(filter -D^SEMU_FEATURE_%, $(subst -D$(S)SEMU_FEATURE,-D^SEMU_FEATURE,$(CFLAGS)))) $< \
 	    | $(DTC) - > $@
 
+minimal-quad.dtb: minimal-quad.dts
+	$(VECHO) " DTC\t$@\n"
+	$(Q)$(CC) -nostdinc -E -P -x assembler-with-cpp -undef \
+	    $(subst ^,$S,$(filter -D^SEMU_FEATURE_%, $(subst -D$(S)SEMU_FEATURE,-D^SEMU_FEATURE,$(CFLAGS)))) $< \
+	    | $(DTC) - > $@
+
 # Rules for downloading prebuilt Linux kernel image
 include mk/external.mk
 
@@ -81,12 +87,14 @@ ext4.img:
 	$(Q)dd if=/dev/zero of=$@ bs=4k count=600
 	$(Q)$(MKFS_EXT4) -F $@
 
-check: $(BIN) minimal.dtb $(KERNEL_DATA) $(INITRD_DATA) $(DISKIMG_FILE)
+SMP ?= 0
+check: $(BIN) minimal.dtb minimal-quad.dtb $(KERNEL_DATA) $(INITRD_DATA) $(DISKIMG_FILE)
 	@$(call notice, Ready to launch Linux kernel. Please be patient.)
+ifeq ($(SMP),1)
+	$(Q)./$(BIN) -k $(KERNEL_DATA) -b minimal-quad.dtb -i $(INITRD_DATA) $(OPTS)
+else
 	$(Q)./$(BIN) -k $(KERNEL_DATA) -b minimal.dtb -i $(INITRD_DATA) $(OPTS)
-
-debug: $(BIN) minimal.dtb $(KERNEL_DATA) $(INITRD_DATA) $(DISKIMG_FILE)
-	$(Q)gdb --args ./$(BIN) -k $(KERNEL_DATA) -b minimal.dtb -i $(INITRD_DATA) $(OPTS)
+endif
 
 build-image:
 	scripts/build-image.sh

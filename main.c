@@ -505,7 +505,7 @@ static void handle_options(int argc,
         hart->mem_page_table = mem_page_table;    \
         hart->s_mode = true;                      \
         hart->hsm_status = SBI_HSM_STATE_STOPPED; \
-        hart_init(hart);                            \
+        hart_init(hart);                          \
     })
 
 static int semu_start(int argc, char **argv)
