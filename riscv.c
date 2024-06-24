@@ -1,6 +1,8 @@
 #include <stdio.h>
 
 #include "riscv.h"
+#include "common.h"
+#include "device.h"
 #include "riscv_private.h"
 
 /* Return the string representation of an error code identifier */
@@ -787,6 +789,7 @@ void vm_init(hart_t *vm)
     mmu_invalidate(vm);
 }
 
+#define PRIV(x) ((emu_state_t *) x->priv)
 void vm_step(hart_t *vm)
 {
     if (vm->hsm_status != SBI_HSM_STATE_STARTED)
@@ -798,7 +801,11 @@ void vm_step(hart_t *vm)
     vm->current_pc = vm->pc;
     if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
         uint32_t applicable = (vm->sip & vm->sie);
-        uint8_t idx = ilog2(applicable);
+        uint8_t idx = __builtin_ffs(applicable) - 1;
+        if (idx == 1){
+            emu_state_t *data = PRIV(vm);
+            data->clint.msip[vm->mhartid] = 0;
+        }
         vm->exc_cause = (1U << 31) | idx;
         vm->stval = 0;
         hart_trap(vm);
