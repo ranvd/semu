@@ -103,7 +103,7 @@ struct __hart_internal {
     uint32_t scounteren;
     uint32_t satp; /**< MMU */
     uint32_t *page_table;
-    
+
     /* Machine state */
     uint32_t mhartid;
 
