@@ -189,7 +189,7 @@ static inline sbi_ret_t handle_sbi_ecall_TIMER(hart_t *hart, int32_t fid)
             (((uint64_t) hart->x_regs[RV_R_A1]) << 32) |
             (uint64_t) (hart->x_regs[RV_R_A0]);
 
-        hart->sip &= ~RV_INT_STI;
+        hart->sip &= ~RV_INT_STI_BIT;
         return (sbi_ret_t){SBI_SUCCESS, 0};
     default:
         return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
@@ -575,10 +575,6 @@ static int semu_start(int argc, char **argv)
         emu.clint.mtime++;
         for (int i = 0; i < 2; i++) {
             emu_update_timer_interrupt(vm.hart[i]);
-            // if (vm.insn_count > emu.timer)
-            //    vm.sip |= RV_INT_STI_BIT;
-            // else
-            //     vm.sip &= ~RV_INT_STI_BIT;
 
             vm_step(vm.hart[i]);
             if (likely(!vm.hart[i]->error))

@@ -14,7 +14,6 @@ void clint_update_interrupts(hart_t *hart, clint_state_t *clint)
 
     if (clint->msip[hart->mhartid]) {
         hart->sip |= RV_INT_SSI_BIT;
-        clint->msip[hart->mhartid] = 0;
     } else
         hart->sip &= ~RV_INT_SSI_BIT;
 }
