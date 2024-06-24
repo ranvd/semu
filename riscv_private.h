@@ -108,3 +108,6 @@ enum {
 
 #define SBI_EID_RST 0x53525354
 #define SBI_RST__SYSTEM_RESET 0
+
+#define SBI_EID_HSM 0x48534D
+
