@@ -806,7 +806,7 @@ void vm_step(hart_t *vm)
     vm->current_pc = vm->pc;
     if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
         uint32_t applicable = (vm->sip & vm->sie);
-        uint8_t idx = __builtin_ffs(applicable) - 1;
+        uint8_t idx = ffs(applicable) - 1;
         if (idx == 1) {
             emu_state_t *data = PRIV(vm);
             data->clint.msip[vm->mhartid] = 0;
