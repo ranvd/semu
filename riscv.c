@@ -331,7 +331,7 @@ static bool mmu_store(hart_t *vm,
     if (vm->error)
         return false;
 
-    if (unlikely(cond)){
+    if (unlikely(cond)) {
         if ((vm->lr_reservation != (addr | 1)))
             return false;
     }
@@ -805,7 +805,7 @@ void vm_step(hart_t *vm)
     vm->current_pc = vm->pc;
     if ((vm->sstatus_sie || !vm->s_mode) && (vm->sip & vm->sie)) {
         uint32_t applicable = (vm->sip & vm->sie);
-        uint8_t idx = ffs(applicable) - 1;
+        uint8_t idx = ilog2(applicable);
         if (idx == 1) {
             emu_state_t *data = PRIV(vm);
             data->clint.msip[vm->mhartid] = 0;
