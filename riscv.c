@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 
 #include "common.h"
@@ -315,7 +316,6 @@ static void mmu_load(hart_t *vm,
 
     if (unlikely(reserved)) {
         vm->lr_reservation = addr | 1;
-        vm->lr_val = *value;
     }
 }
 
@@ -331,18 +331,17 @@ static bool mmu_store(hart_t *vm,
     if (vm->error)
         return false;
 
-    if (unlikely(cond)) {
-        uint32_t cas_value;
-        vm->mem_load(vm, addr, width, &cas_value);
-        if ((vm->lr_reservation != (addr | 1)) || vm->lr_val != cas_value)
+    if (unlikely(cond)){
+        if ((vm->lr_reservation != (addr | 1)))
             return false;
-
-        vm->lr_reservation = 0;
-    } else {
-        if (unlikely(vm->lr_reservation & 1) &&
-            (vm->lr_reservation & ~3) == (addr & ~3))
-            vm->lr_reservation = 0;
     }
+
+    for (uint32_t i = 0; i < vm->vm->hart_number; i++) {
+        if (unlikely(vm->vm->hart[i]->lr_reservation & 1) &&
+            (vm->vm->hart[i]->lr_reservation & ~3) == (addr & ~3))
+            vm->vm->hart[i]->lr_reservation = 0;
+    }
+
     vm->mem_store(vm, addr, width, value);
     return true;
 }
